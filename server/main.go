@@ -7,10 +7,13 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/gorilla/mux"
 	"github.com/rs/cors"
 )
+
+var startTime = time.Now()
 
 // Telemetry represents a scam-detection event payload from the Android client.
 type Telemetry struct {
@@ -43,6 +46,7 @@ func main() {
 
 	r := mux.NewRouter()
 	r.HandleFunc("/api/ping", pingHandler).Methods("GET")
+	r.HandleFunc("/api/health", healthHandler).Methods("GET")
 	r.HandleFunc("/api/telemetry", telemetryHandler).Methods("POST")
 	r.HandleFunc("/api/whitelist", whitelistHandler).Methods("GET", "POST", "DELETE")
 	r.HandleFunc("/api/lora", loraHandler).Methods("POST")
@@ -57,6 +61,15 @@ func main() {
 func pingHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte("pong"))
+}
+
+func healthHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":  "ok",
+		"uptime":  time.Since(startTime).String(),
+		"service": "cyberguard-ai-swarm-server",
+	})
 }
 
 func telemetryHandler(w http.ResponseWriter, r *http.Request) {

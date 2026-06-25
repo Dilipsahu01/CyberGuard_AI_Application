@@ -18,6 +18,7 @@ func TestPingHandler(t *testing.T) {
 }
 
 func TestTelemetryHandler_ValidPayload(t *testing.T) {
+	dbPath = ":memory:"
 	initDB()
 	defer closeDB()
 

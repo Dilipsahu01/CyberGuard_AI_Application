@@ -10,9 +10,13 @@ import (
 
 var db *sql.DB
 
+// dbPath is the SQLite database file path.
+// Tests override this to ":memory:" to avoid filesystem dependencies.
+var dbPath = "data/cyberguard.db"
+
 func initDB() {
 	var err error
-	db, err = sql.Open("sqlite3", "data/cyberguard.db")
+	db, err = sql.Open("sqlite3", dbPath)
 	if err != nil {
 		log.Fatalf("failed to open sqlite db: %v", err)
 	}

@@ -1,0 +1,3 @@
+# data directory — holds the SQLite database at runtime (cyberguard.db)
+# This file exists only to ensure the directory is tracked by git.
+# The actual database file is gitignored.

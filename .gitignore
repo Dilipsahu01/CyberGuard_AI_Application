@@ -38,6 +38,11 @@ google-services.json
 GoogleService-Info.plist
 **/local.properties
 
+# SQLite databases
+*.db
+*.db-shm
+*.db-wal
+
 # ── Large Binaries & ML Models ───────────────────────────────────────────────
 *.aar
 *.onnx

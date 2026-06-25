@@ -52,8 +52,15 @@ func main() {
 	r.HandleFunc("/api/lora", loraHandler).Methods("POST")
 
 	handler := cors.AllowAll().Handler(r)
+	srv := &http.Server{
+		Addr:         ":8080",
+		Handler:      handler,
+		ReadTimeout:  10 * time.Second,
+		WriteTimeout: 10 * time.Second,
+		IdleTimeout:  60 * time.Second,
+	}
 	log.Println("CyberGuard-AI server starting on :8080")
-	if err := http.ListenAndServe(":8080", handler); err != nil {
+	if err := srv.ListenAndServe(); err != nil {
 		log.Fatalf("server error: %v", err)
 	}
 }

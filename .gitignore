@@ -1,0 +1,87 @@
+####################################
+# CyberGuard AI – .gitignore
+####################################
+
+# ── Android / Gradle ──────────────────────────────────────────────────────────
+*.iml
+.gradle/
+/local.properties
+/.idea/caches/
+/.idea/libraries/
+/.idea/modules.xml
+/.idea/workspace.xml
+/.idea/navEditor.xml
+/.idea/assetWizardSettings.xml
+/.idea/deploymentTargetSelector.xml
+/.idea/deviceManager.xml
+/.idea/studiobot.xml
+/.idea/planningMode.xml
+/.idea/appInsightsSettings.xml
+/build/
+app/build/
+/captures/
+.externalNativeBuild/
+.cxx/
+debug.keystore
+release.keystore
+*.jks
+*.keystore
+
+# IDE – keep only necessary .idea files
+.idea/
+
+# ── Secrets & Credentials ────────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+google-services.json
+GoogleService-Info.plist
+**/local.properties
+
+# ── Large Binaries & ML Models ───────────────────────────────────────────────
+*.aar
+*.onnx
+*.ort
+*.tflite
+*.pb
+*.bin
+*.pt
+*.pth
+app/libs/
+
+# ── Python (pipeline_demo & tooling) ─────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+.Python
+*.egg-info/
+dist/
+*.egg
+
+# ── Go (server) ───────────────────────────────────────────────────────────────
+server/server
+server/server.exe
+*.exe
+*.out
+
+# ── Vercel ────────────────────────────────────────────────────────────────────
+.vercel/
+
+# ── AI / IDE scratch files ────────────────────────────────────────────────────
+.artifacts/
+.gemini/
+metadata.json
+
+# ── Misc project scratch files ────────────────────────────────────────────────
+realppt.txt
+flowchart.txt
+*.pptx
+
+# ── OS ────────────────────────────────────────────────────────────────────────
+.DS_Store
+.DS_Store?
+Thumbs.db
+ehthumbs.db

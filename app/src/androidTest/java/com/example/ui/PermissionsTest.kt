@@ -5,7 +5,6 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.assertExists
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.UiDevice
@@ -31,17 +30,17 @@ class PermissionsTest {
         }
 
         // Verify the Prominent Disclosure screen renders first
-        composeTestRule.onNodeWithText("Data Privacy & Usage Disclosure").assertExists()
-        composeTestRule.onNodeWithText("1. Microphone Audio", substring = true).assertExists()
+        composeTestRule.onNodeWithText("Data Privacy & Usage Disclosure").performScrollTo().assertIsDisplayed()
+        composeTestRule.onNodeWithText("1. Microphone Audio", substring = true).performScrollTo().assertIsDisplayed()
         
         // Accept the disclosure
         composeTestRule.onNodeWithText("I Agree and Accept").performScrollTo().performClick()
 
         // Verify the System Permissions screen renders
-        composeTestRule.onNodeWithText("Microphone").assertExists()
-        composeTestRule.onNodeWithText("Phone/Dialer").assertExists()
-        composeTestRule.onNodeWithText("Contacts").assertExists()
-        composeTestRule.onNodeWithText("SMS Messages").assertExists()
+        composeTestRule.onNodeWithText("Microphone").performScrollTo().assertIsDisplayed()
+        composeTestRule.onNodeWithText("Phone/Dialer").performScrollTo().assertIsDisplayed()
+        composeTestRule.onNodeWithText("Contacts").performScrollTo().assertIsDisplayed()
+        composeTestRule.onNodeWithText("SMS Messages").performScrollTo().assertIsDisplayed()
 
         // Perform click on the grant button
         composeTestRule.onNodeWithText("Grant System Permissions").performScrollTo().performClick()

@@ -28,14 +28,21 @@ class PermissionsTest {
             PermissionsOnboardingScreen(onGrantPermissions = mockGrantPermissions)
         }
 
-        // Verify the screen renders the necessary explanations for the 7-stage pipeline
-        composeTestRule.onNodeWithText("Protecting Your Calls").assertIsDisplayed()
+        // Verify the Prominent Disclosure screen renders first
+        composeTestRule.onNodeWithText("Data Privacy & Usage Disclosure").assertIsDisplayed()
+        composeTestRule.onNodeWithText("1. Microphone Audio", substring = true).assertIsDisplayed()
+        
+        // Accept the disclosure
+        composeTestRule.onNodeWithText("I Agree and Accept").performClick()
+
+        // Verify the System Permissions screen renders
         composeTestRule.onNodeWithText("Microphone").assertIsDisplayed()
         composeTestRule.onNodeWithText("Phone/Dialer").assertIsDisplayed()
         composeTestRule.onNodeWithText("Contacts").assertIsDisplayed()
+        composeTestRule.onNodeWithText("SMS Messages").assertIsDisplayed()
 
         // Perform click on the grant button
-        composeTestRule.onNodeWithText("Grant Permissions").performClick()
+        composeTestRule.onNodeWithText("Grant System Permissions").performClick()
 
         // Verify callback is triggered
         verify(exactly = 1) { mockGrantPermissions.invoke() }

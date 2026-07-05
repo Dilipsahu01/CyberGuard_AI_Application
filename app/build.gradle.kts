@@ -57,8 +57,13 @@ android {
       pickFirsts.add("**/libonnxruntime.so")
       pickFirsts.add("**/libc++_shared.so")
       pickFirsts.add("**/libonnxruntime4j_jni.so")
-      doNotStrip.add("**/libonnxruntime.so")
-      doNotStrip.add("**/libonnxruntime4j_jni.so")
+      keepDebugSymbols.add("**/libonnxruntime.so")
+      keepDebugSymbols.add("**/libonnxruntime4j_jni.so")
+    }
+    resources {
+      excludes.add("META-INF/LICENSE.md")
+      excludes.add("META-INF/LICENSE-notice.md")
+      excludes.add("META-INF/*")
     }
   }
   kotlinOptions {

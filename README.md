@@ -18,7 +18,7 @@
 
 ---
 
-> [!CAUTION]
+> [!IMPORTANT]
 > **Source Code Withheld for Intellectual Property (IP) Protection**
 > 
 > The source code for this project is currently maintained in a **Private Repository** to protect Intellectual Property rights. CyberGuard AI has been officially selected in the **Top 50 National Evaluation Results** for the **5G Innovation Hackathon 2026**. 
@@ -29,15 +29,15 @@
 
 ## 5G Innovation Hackathon 2026
 
-The **[5G Innovation Hackathon 2026](https://hackathon.5g.tcil.net.in)** is a prestigious national initiative organized to develop cutting-edge solutions using 5G labs across 100 institutes in India. The program facilitates innovation through DoT (Department of Telecommunications) screening, regional/national shortlisting, expert mentorship, and seed funding for commercialization.
+The **[5G Innovation Hackathon 2026](https://www.preprodeservices.dot.gov.in/5ghackathon/)** is a prestigious national initiative organized by the Department of Telecommunications (DoT) to develop cutting-edge solutions using 5G labs across 100 institutes in India. The program facilitates solution development in key technology areas such as AI-driven network maintenance, IoT-enabled applications, smart healthcare, industrial automation, and quantum communication.
 
 Our platform directly addresses the following official thematic areas:
-* **Telecom Security:** Solutions relevant to next-generation communication systems.
-* **AI/ML in Telecom:** Application of Artificial Intelligence and Machine Learning for telecom technology.
-* **Advanced 5G Capabilities:** Leveraging network slicing, QoS, and native 5G features for ultra-reliable low-latency communication (URLLC).
+* **Telecom security solutions** relevant to next-generation communication systems.
+* **Application of Artificial Intelligence (AI)** and Machine Learning (ML) for telecom technology.
+* **5G use cases leveraging advanced network capabilities**, including network slicing, Quality of Service (QoS), and other native 5G features.
 
 ### Project Roadmap & Current Phase
-We successfully cleared the **National level presentations (May - June 2026)** and are currently in the **Pragati Phase (June - Sept 2026)**. We are actively developing the production-ready prototype alongside industry experts in preparation for the physical demonstrations and final showcase at the **India Mobile Congress (October 2026)**.
+We successfully cleared the **National level presentations (TEC)** held from May 26 to June 19, 2026, and are currently in the 12-week **Pragati Phase (June 22 - Sept 13, 2026)**. We are actively developing the production-ready prototype alongside assigned mentors. Our timeline leads to physical demonstrations before the TEEC (starting September 14) and the final awards showcase at the **India Mobile Congress (October 2026)**.
 
 ---
 

@@ -165,9 +165,11 @@ private fun DisclosureItem(title: String, description: String) {
 
 @Composable
 private fun SystemPermissionsScreen(onGrantPermissions: () -> Unit) {
+    val scrollState = rememberScrollState()
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .verticalScroll(scrollState)
             .padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
@@ -214,7 +216,7 @@ private fun SystemPermissionsScreen(onGrantPermissions: () -> Unit) {
             HorizontalDivider(color = BorderGray, thickness = 1.dp)
         }
 
-        Spacer(Modifier.weight(1f))
+        Spacer(Modifier.height(32.dp))
 
         Button(
             onClick = onGrantPermissions,

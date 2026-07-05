@@ -59,6 +59,7 @@ import java.util.Date
 import java.util.Locale
 import com.example.ui.theme.Inter
 import com.example.ui.theme.RobotoMono
+import com.example.ui.AppNavigation
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
@@ -82,11 +83,7 @@ class MainActivity : ComponentActivity() {
                     viewModel.checkAllPermissions()
                 }
 
-                com.example.ui.DashboardScreen(
-                    onNavigateToDialer = {
-                        // TODO: Integrate Dialer Navigation
-                    }
-                )
+                AppNavigation()
             }
         }
     }

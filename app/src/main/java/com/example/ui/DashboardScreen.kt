@@ -37,7 +37,9 @@ val SwarmGreenBg = Color(0xFFDCFCE7)
 
 @Composable
 fun DashboardScreen(
-    onNavigateToDialer: () -> Unit = {}
+    onNavigateToDialer: () -> Unit = {},
+    onNavigateToSettings: () -> Unit = {},
+    onNavigateToLogs: () -> Unit = {}
 ) {
     Surface(color = Color.White, modifier = Modifier.fillMaxSize()) {
         Box(modifier = Modifier.fillMaxSize()) {
@@ -47,8 +49,10 @@ fun DashboardScreen(
                     .verticalScroll(rememberScrollState())
             ) {
                 // Shared App Header (from Components.kt)
-                // Assuming AppHeader exists in Components.kt
-                // AppHeader()
+                AppHeader(
+                    onSettingsClick = onNavigateToSettings,
+                    onLogsClick = onNavigateToLogs
+                )
 
                 Column(modifier = Modifier.padding(16.dp)) {
                     
@@ -92,13 +96,12 @@ fun DashboardScreen(
             }
 
             // Standard Floating Dialer Button (from Components.kt)
-            // Assuming FloatingDialerButton exists in Components.kt
-            // FloatingDialerButton(
-            //    onClick = onNavigateToDialer,
-            //    modifier = Modifier
-            //        .align(Alignment.BottomCenter)
-            //        .padding(bottom = 24.dp)
-            //)
+            FloatingDialerButton(
+               onClick = onNavigateToDialer,
+               modifier = Modifier
+                   .align(Alignment.BottomCenter)
+                   .padding(bottom = 24.dp)
+            )
         }
     }
 }

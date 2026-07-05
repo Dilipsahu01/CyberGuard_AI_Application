@@ -35,7 +35,11 @@ import androidx.compose.ui.unit.sp
 
 // ---- App header: logo wordmark + menu icon, shared by every screen except the active-call screen ----
 @Composable
-fun AppHeader(modifier: Modifier = Modifier) {
+fun AppHeader(
+    modifier: Modifier = Modifier,
+    onSettingsClick: () -> Unit = {},
+    onLogsClick: () -> Unit = {}
+) {
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -49,12 +53,25 @@ fun AppHeader(modifier: Modifier = Modifier) {
             fontSize = 18.sp,
             fontWeight = FontWeight.SemiBold
         )
-        Icon(
-            imageVector = Icons.Filled.Menu,
-            contentDescription = "Menu",
-            tint = Gray800,
-            modifier = Modifier.size(24.dp)
-        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                imageVector = Icons.Filled.List,
+                contentDescription = "Call Logs",
+                tint = Gray800,
+                modifier = Modifier
+                    .size(24.dp)
+                    .clickable(onClick = onLogsClick)
+            )
+            Spacer(modifier = Modifier.width(16.dp))
+            Icon(
+                imageVector = Icons.Filled.Menu,
+                contentDescription = "Menu",
+                tint = Gray800,
+                modifier = Modifier
+                    .size(24.dp)
+                    .clickable(onClick = onSettingsClick)
+            )
+        }
     }
 }
 

@@ -33,6 +33,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -59,9 +60,9 @@ fun ActiveCallScreen(
     onEndCall: () -> Unit = {}
 ) {
     // States to manage the advanced tools
-    var showCaptions by remember { mutableStateOf(false) }
-    var showNotes by remember { mutableStateOf(false) }
-    var notesText by remember { mutableStateOf("") }
+    var showCaptions by rememberSaveable { mutableStateOf(false) }
+    var showNotes by rememberSaveable { mutableStateOf(false) }
+    var notesText by rememberSaveable { mutableStateOf("") }
 
     Surface(color = Color.White, modifier = Modifier.fillMaxSize()) {
         Column(

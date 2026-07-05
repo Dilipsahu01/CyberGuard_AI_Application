@@ -23,6 +23,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -54,12 +55,12 @@ fun AdvancedSettingsScreen(
     onBackClick: () -> Unit = {},
     onCheckForUpdates: () -> Unit = {}
 ) {
-    var threatSensitivity by remember { mutableFloatStateOf(70f) }
-    var deepfakeProtection by remember { mutableStateOf(true) }
-    var intentNlpAnalysis by remember { mutableStateOf(true) }
-    var swarmIntelligence by remember { mutableStateOf(true) }
-    var syncModeIndex by remember { mutableIntStateOf(0) }
-    var darkTheme by remember { mutableStateOf(false) }
+    var threatSensitivity by rememberSaveable { mutableFloatStateOf(70f) }
+    var deepfakeProtection by rememberSaveable { mutableStateOf(true) }
+    var intentNlpAnalysis by rememberSaveable { mutableStateOf(true) }
+    var swarmIntelligence by rememberSaveable { mutableStateOf(true) }
+    var syncModeIndex by rememberSaveable { mutableIntStateOf(0) }
+    var darkTheme by rememberSaveable { mutableStateOf(false) }
 
     Surface(color = Gray50, modifier = Modifier.fillMaxSize()) {
         Column(modifier = Modifier.fillMaxSize()) {

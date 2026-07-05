@@ -5,7 +5,7 @@ import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.performClick
-import androidx.compose.ui.test.assertExists
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertCountEquals
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import io.mockk.mockk
@@ -34,7 +34,7 @@ class ActiveCallScreenTest {
         }
 
         // Assert no cyclic loop occurred, UI didn't crash, and state resolved cleanly
-        composeTestRule.onNodeWithText("SCAM EVIDENCE PAD").assertExists()
+        composeTestRule.onNodeWithText("SCAM EVIDENCE PAD").assertIsDisplayed()
         composeTestRule.onAllNodesWithText("LIVE AI TRANSCRIPT").assertCountEquals(0)
     }
 
@@ -56,7 +56,7 @@ class ActiveCallScreenTest {
         }
 
         // Assert it rendered without crashing
-        composeTestRule.onNodeWithText("+91 7622365663").assertExists()
+        composeTestRule.onNodeWithText("+91 7622365663").assertIsDisplayed()
     }
 
     @Test
@@ -69,7 +69,7 @@ class ActiveCallScreenTest {
 
         // User expands the Captions Bottom Sheet
         composeTestRule.onNodeWithText("Captions").performClick()
-        composeTestRule.onNodeWithText("LIVE AI TRANSCRIPT").assertExists()
+        composeTestRule.onNodeWithText("LIVE AI TRANSCRIPT").assertIsDisplayed()
 
         // Simulate Device Configuration Change (Screen Rotation / Foldable State Change)
         restorationTester.emulateSavedInstanceStateRestore()

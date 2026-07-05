@@ -3,9 +3,10 @@ package com.example.ui
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.assertDoesNotExist
+import androidx.compose.ui.test.assertCountEquals
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import io.mockk.mockk
 import org.junit.Rule
@@ -23,7 +24,7 @@ class ActiveCallScreenTest {
         val mockEndCall = mockk<() -> Unit>(relaxed = true)
 
         composeTestRule.setContent {
-            ActiveCallScreen(onEndCallClick = mockEndCall)
+            ActiveCallScreen(onEndCall = mockEndCall)
         }
 
         // Simulate a user frantically toggling 20 times rapidly
@@ -34,7 +35,7 @@ class ActiveCallScreenTest {
 
         // Assert no cyclic loop occurred, UI didn't crash, and state resolved cleanly
         composeTestRule.onNodeWithText("Call Notes").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Transcription").assertDoesNotExist()
+        composeTestRule.onAllNodesWithText("Transcription").assertCountEquals(0)
     }
 
     @Test
@@ -51,7 +52,7 @@ class ActiveCallScreenTest {
         // for(i in 1..50) { flow.value = i / 50f } // Fire 50 rapid updates
 
         composeTestRule.setContent {
-            ActiveCallScreen(onEndCallClick = mockEndCall)
+            ActiveCallScreen(onEndCall = mockEndCall)
         }
 
         // Assert it rendered without crashing
@@ -63,7 +64,7 @@ class ActiveCallScreenTest {
         val restorationTester = StateRestorationTester(composeTestRule)
         
         restorationTester.setContent {
-            ActiveCallScreen(onEndCallClick = {})
+            ActiveCallScreen(onEndCall = {})
         }
 
         // User expands the Captions Bottom Sheet

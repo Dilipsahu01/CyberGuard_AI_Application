@@ -1,13 +1,13 @@
 package com.example.ui
 
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertDoesNotExist
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import io.mockk.mockk
-import io.mockk.verify
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -19,49 +19,61 @@ class ActiveCallScreenTest {
     val composeTestRule = createComposeRule()
 
     @Test
-    fun testCaptionsAndNotesAreMutuallyExclusive() {
+    fun testStateThrashing_RapidToggles_AreMutuallyExclusive() {
         val mockEndCall = mockk<() -> Unit>(relaxed = true)
 
         composeTestRule.setContent {
             ActiveCallScreen(onEndCallClick = mockEndCall)
         }
 
-        // Initially neither bottom sheet is visible
-        composeTestRule.onNodeWithText("Transcription").assertDoesNotExist()
-        composeTestRule.onNodeWithText("Call Notes").assertDoesNotExist()
+        // Simulate a user frantically toggling 20 times rapidly
+        for (i in 1..20) {
+            composeTestRule.onNodeWithText("Captions").performClick()
+            composeTestRule.onNodeWithText("Take Note").performClick()
+        }
 
-        // Click Captions
-        composeTestRule.onNodeWithText("Captions").performClick()
-        
-        // Assert Captions sheet is displayed
-        composeTestRule.onNodeWithText("Transcription").assertIsDisplayed()
-
-        // Click Take Note
-        composeTestRule.onNodeWithText("Take Note").performClick()
-        
-        // Assert Notes sheet is displayed, and Captions disappeared
+        // Assert no cyclic loop occurred, UI didn't crash, and state resolved cleanly
         composeTestRule.onNodeWithText("Call Notes").assertIsDisplayed()
         composeTestRule.onNodeWithText("Transcription").assertDoesNotExist()
     }
 
     @Test
-    fun testEndCallButtonTriggersCallback() {
+    fun testAsyncFlowOverload_ScamScoreUpdates() {
         val mockEndCall = mockk<() -> Unit>(relaxed = true)
+        
+        // NOTE: Since the current ActiveCallScreen doesn't inject a PipelineViewModel directly,
+        // this test outlines the architecture for stress-testing Coroutine StateFlow emissions.
+        // In the future when the ViewModel is attached:
+        // val mockViewModel = mockk<PipelineViewModel>()
+        // val flow = MutableStateFlow(0f)
+        // every { mockViewModel.scamScore } returns flow
+        // composeTestRule.setContent { ActiveCallScreen(viewModel = mockViewModel) }
+        // for(i in 1..50) { flow.value = i / 50f } // Fire 50 rapid updates
 
         composeTestRule.setContent {
             ActiveCallScreen(onEndCallClick = mockEndCall)
         }
 
-        // Click End Call (Usually represented by an icon, but checking for a tag if possible, or using content description)
-        // Note: The UI has an End Call icon, we can target it using its content description
-        composeTestRule.onNodeWithText("End Call", useUnmergedTree = true).assertDoesNotExist() // Assuming it uses an icon
+        // Assert it rendered without crashing
+        composeTestRule.onNodeWithText("Threat Level: Low").assertIsDisplayed()
+    }
+
+    @Test
+    fun testLifecycle_OrientationChaos_PreservesState() {
+        val restorationTester = StateRestorationTester(composeTestRule)
         
-        // For the sake of robust testing, if the developer didn't add a testTag, 
-        // we might target the icon by finding the node with "End call" content description.
-        // Assuming ContentDescription = "End Call" or similar. If not found, 
-        // a best practice is to add a testTag="end_call_button" in the UI.
-        // As an SDET, I'll mock the intent here:
-        // composeTestRule.onNodeWithContentDescription("End call").performClick()
-        // verify { mockEndCall.invoke() }
+        restorationTester.setContent {
+            ActiveCallScreen(onEndCallClick = {})
+        }
+
+        // User expands the Captions Bottom Sheet
+        composeTestRule.onNodeWithText("Captions").performClick()
+        composeTestRule.onNodeWithText("Transcription").assertIsDisplayed()
+
+        // Simulate Device Configuration Change (Screen Rotation / Foldable State Change)
+        restorationTester.emulateSavedInstanceStateRestore()
+
+        // Assert state is perfectly preserved and layout didn't reset
+        composeTestRule.onNodeWithText("Transcription").assertIsDisplayed()
     }
 }

@@ -17,6 +17,42 @@ class DialerScreenTest {
     val composeTestRule = createComposeRule()
 
     @Test
+    fun testInputFuzzing_MassiveString_DoesNotCrash() {
+        val mockCallClick = mockk<(String) -> Unit>(relaxed = true)
+
+        composeTestRule.setContent {
+            DialerScreen(onCallClick = mockCallClick)
+        }
+
+        // Type a massive 50 digit string
+        for (i in 1..50) {
+            composeTestRule.onNodeWithText("9").performClick()
+        }
+
+        // Verify the UI scaled or truncated without throwing OutOfMemory or Compose layout exceptions
+        val expectedNumber = "+91 " + "9".repeat(50)
+        composeTestRule.onNodeWithText(expectedNumber).assertIsDisplayed()
+    }
+
+    @Test
+    fun testInputFuzzing_SpecialCharacters_GracefullyHandlesT9() {
+        val mockCallClick = mockk<(String) -> Unit>(relaxed = true)
+
+        composeTestRule.setContent {
+            DialerScreen(onCallClick = mockCallClick)
+        }
+
+        // Type complex engineering codes: *#*#4636#*#*
+        val inputs = listOf("*", "#", "*", "#", "4", "6", "3", "6", "#", "*", "#", "*")
+        inputs.forEach { digit ->
+            composeTestRule.onNodeWithText(digit).performClick()
+        }
+
+        // Verify the T9 engine didn't throw a NullPointerException when encountering special chars
+        composeTestRule.onNodeWithText("+91 *#*#4636#*#*").assertIsDisplayed()
+    }
+
+    @Test
     fun testKeypadAppendsDigitsAndShowsT9Contact() {
         val mockCallClick = mockk<(String) -> Unit>(relaxed = true)
 
@@ -24,7 +60,7 @@ class DialerScreenTest {
             DialerScreen(onCallClick = mockCallClick)
         }
 
-        // Click keys for 3, 2, 3 (which matches the T9 mapping for 'DAD' and the mock contact 'Dad')
+        // Click keys for 3, 2, 3 (which matches the mock contact 'Dad')
         composeTestRule.onNodeWithText("3").performClick()
         composeTestRule.onNodeWithText("2").performClick()
         composeTestRule.onNodeWithText("3").performClick()

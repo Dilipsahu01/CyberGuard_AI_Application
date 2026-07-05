@@ -152,7 +152,7 @@
 ## 5. UI Configuration Flags
 
 > [!NOTE]
-> Located across the `NewUI_UX` directory Jetpack Compose screens. These boolean flags control user preferences and component visibility.
+> Located across the `app/src/main/java/com/example/ui/` directory Jetpack Compose screens. These boolean flags control user preferences and component visibility.
 
 | # | Flag Name | Type | Screen | Default | Activation Condition / Triggers |
 |:-:|:---|:---:|:---|:---:|:---|
@@ -218,7 +218,7 @@ These variables govern the dynamic visual states across the UI screens:
 | `selectedTab` | `Int` | CallRecordingsScreen & CallLogsScreen |
 | `score`, `transcript`, `hitWord`, `callerNumber`, `activeStage`, `isScamScenario`, `isAnswered` | Various | IncomingCallActivity |
 | `isSimulating`, `activeCaller`, `liveTranscript`, `liveHitKeyword` | Various | PipelineViewModel |
-| `autoHangup`, `swarmServerUrl`, `enableSmsFallback`, `smsFallbackNumber`, `whitelistInput`, `alertThreshold` | Various | SettingsActivity |
+| `autoHangup`, `swarmServerUrl`, `enableSmsFallback`, `smsFallbackNumber`, `whitelistInput`, `alertThreshold` | Various | Advancedsettingsscreen.kt |
 | `selectedLogForDialog`, `number` | Various | MainActivity |
 
 ### 7.2 Coroutine StateFlow Streams
@@ -282,7 +282,7 @@ Byte-level masking and Little-Endian stitching:
 
 | Constraint | Detail |
 |:---|:---|
-| **Configurable Threshold** | `alertThreshold` (default: `70`) — located in `SettingsActivity`, governs the `isScamDanger` boolean |
+| **Configurable Threshold** | `alertThreshold` (default: `70`) — located in `Advancedsettingsscreen.kt`, governs the `isScamDanger` boolean |
 | **Quantization** | `Sherpa-ONNX Fast Conformer CTC` operates with **INT8 quantization**, constrained to ~40 MB |
 | **ABI Stripping** | ONNX runtime native library (`libonnxruntime.so`) restricted solely to `arm64-v8a`, shedding ~30 MB of multi-ABI size bloat |
 | **Inference Latency Target** | MiniLM-L6 inference operates within a strict window of **~17ms** per pass |

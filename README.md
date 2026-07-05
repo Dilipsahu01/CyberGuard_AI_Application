@@ -45,6 +45,10 @@ We successfully cleared the **National level presentations (TEC)** held from May
 
 **CyberGuard AI** is a next-generation telecom security ecosystem designed to detect, mitigate, and report telecom scams, spam, and malicious intent in real-time using on-device Machine Learning. 
 
+<div align="center">
+  <img src="assets/images/CyberGuard_AI_LowLevel_Architecture_Preview-1.png" alt="CyberGuard AI Low-Level Architecture" width="800"/>
+</div>
+
 *To maintain the integrity of our intellectual property ahead of the final national evaluation, specific technical implementation details, proprietary algorithms, and architectural specifics have been intentionally omitted from this public document.*
 
 ### Core Capabilities

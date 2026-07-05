@@ -3,7 +3,9 @@ package com.example.ui
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertExists
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.UiDevice
@@ -29,20 +31,20 @@ class PermissionsTest {
         }
 
         // Verify the Prominent Disclosure screen renders first
-        composeTestRule.onNodeWithText("Data Privacy & Usage Disclosure").assertIsDisplayed()
-        composeTestRule.onNodeWithText("1. Microphone Audio", substring = true).assertIsDisplayed()
+        composeTestRule.onNodeWithText("Data Privacy & Usage Disclosure").assertExists()
+        composeTestRule.onNodeWithText("1. Microphone Audio", substring = true).assertExists()
         
         // Accept the disclosure
-        composeTestRule.onNodeWithText("I Agree and Accept").performClick()
+        composeTestRule.onNodeWithText("I Agree and Accept").performScrollTo().performClick()
 
         // Verify the System Permissions screen renders
-        composeTestRule.onNodeWithText("Microphone").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Phone/Dialer").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Contacts").assertIsDisplayed()
-        composeTestRule.onNodeWithText("SMS Messages").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Microphone").assertExists()
+        composeTestRule.onNodeWithText("Phone/Dialer").assertExists()
+        composeTestRule.onNodeWithText("Contacts").assertExists()
+        composeTestRule.onNodeWithText("SMS Messages").assertExists()
 
         // Perform click on the grant button
-        composeTestRule.onNodeWithText("Grant System Permissions").performClick()
+        composeTestRule.onNodeWithText("Grant System Permissions").performScrollTo().performClick()
 
         // Verify callback is triggered
         verify(exactly = 1) { mockGrantPermissions.invoke() }

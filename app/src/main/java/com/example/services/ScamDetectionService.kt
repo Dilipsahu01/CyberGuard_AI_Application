@@ -154,7 +154,11 @@ class ScamDetectionService : Service() {
 
         // --- STAGE 1: SOS / EMERGENCY BYPASS ---
         val emergencyNumbers = listOf("100", "101", "102", "112", "911", "999")
-        if (emergencyNumbers.contains(currentCaller.replace(Regex("[^0-9]"), ""))) {
+        val cleanNumber = currentCaller.replace(Regex("[^0-9]"), "")
+        val isEmergency = emergencyNumbers.any { emergency ->
+            cleanNumber == emergency || (cleanNumber.endsWith(emergency) && cleanNumber.length <= emergency.length + 4)
+        }
+        if (isEmergency) {
             Log.e(tag, "🚨 EMERGENCY SOS NUMBER DETECTED ($currentCaller). Bypassing AI processing completely to guarantee zero latency.")
             stopSelf()
             return START_NOT_STICKY

@@ -13,6 +13,7 @@ import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.filled.Message
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
@@ -110,6 +111,10 @@ private fun ProminentDisclosureScreen(onAccept: () -> Unit, onDecline: () -> Uni
                     title = "3. Phone State",
                     description = "CyberGuard AI reads your phone state to detect when a call starts and ends, allowing the service to activate only when needed."
                 )
+                DisclosureItem(
+                    title = "4. SMS Capabilities",
+                    description = "CyberGuard AI uses SMS to automatically dispatch emergency alerts to your configured Guardian if a severe scam is intercepted."
+                )
 
                 Spacer(Modifier.height(16.dp))
 
@@ -204,6 +209,8 @@ private fun SystemPermissionsScreen(onGrantPermissions: () -> Unit) {
             PermissionRow(icon = Icons.Filled.Phone, title = "Phone/Dialer", subtitle = "Required to intercept scam calls.")
             HorizontalDivider(color = BorderGray, thickness = 1.dp)
             PermissionRow(icon = Icons.Filled.Contacts, title = "Contacts", subtitle = "Used for the trusted whitelist.")
+            HorizontalDivider(color = BorderGray, thickness = 1.dp)
+            PermissionRow(icon = Icons.Filled.Message, title = "SMS Messages", subtitle = "Used for Guardian emergency alerts.")
             HorizontalDivider(color = BorderGray, thickness = 1.dp)
         }
 

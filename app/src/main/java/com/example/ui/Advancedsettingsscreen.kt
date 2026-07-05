@@ -11,13 +11,16 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Brightness4
 import androidx.compose.material.icons.filled.Groups
+import androidx.compose.material.icons.filled.HealthAndSafety
 import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.RecordVoiceOver
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -55,12 +58,20 @@ fun AdvancedSettingsScreen(
     onBackClick: () -> Unit = {},
     onCheckForUpdates: () -> Unit = {}
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val prefs = remember { context.getSharedPreferences("cyberguard_settings", android.content.Context.MODE_PRIVATE) }
+    
     var threatSensitivity by rememberSaveable { mutableFloatStateOf(70f) }
     var deepfakeProtection by rememberSaveable { mutableStateOf(true) }
     var intentNlpAnalysis by rememberSaveable { mutableStateOf(true) }
+    var guardianNumber by rememberSaveable { mutableStateOf(prefs.getString("guardian_number", "") ?: "") }
     var swarmIntelligence by rememberSaveable { mutableStateOf(true) }
     var syncModeIndex by rememberSaveable { mutableIntStateOf(0) }
     var darkTheme by rememberSaveable { mutableStateOf(false) }
+
+    LaunchedEffect(guardianNumber) {
+        prefs.edit().putString("guardian_number", guardianNumber).apply()
+    }
 
     Surface(color = Gray50, modifier = Modifier.fillMaxSize()) {
         Column(modifier = Modifier.fillMaxSize()) {
@@ -95,6 +106,19 @@ fun AdvancedSettingsScreen(
                             subtitle = "Analyze financial coercion and urgency intents.",
                             checked = intentNlpAnalysis,
                             onCheckedChange = { intentNlpAnalysis = it }
+                        )
+                    }
+                }
+
+                item {
+                    SettingsSection(title = "Guardian Protection") {
+                        SettingsTextFieldRow(
+                            icon = Icons.Filled.HealthAndSafety,
+                            title = "Emergency Guardian Number",
+                            subtitle = "Automatically text this number if a high-risk scam is detected.",
+                            value = guardianNumber,
+                            onValueChange = { guardianNumber = it },
+                            placeholder = "e.g. +1 555-0100"
                         )
                     }
                 }
@@ -250,6 +274,46 @@ private fun SettingsSwitchRow(
                 uncheckedThumbColor = Color.White,
                 uncheckedTrackColor = Gray50,
                 uncheckedBorderColor = BorderGray
+            )
+        )
+    }
+}
+
+@Composable
+private fun SettingsTextFieldRow(
+    icon: ImageVector,
+    title: String,
+    subtitle: String,
+    value: String,
+    onValueChange: (String) -> Unit,
+    placeholder: String = ""
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 14.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(imageVector = icon, contentDescription = null, tint = Primary, modifier = Modifier.size(22.dp))
+            Spacer(Modifier.width(14.dp))
+            Column(Modifier.weight(1f)) {
+                Text(title, fontSize = 15.sp, fontWeight = FontWeight.Medium, color = Gray800)
+                Spacer(Modifier.height(2.dp))
+                Text(subtitle, fontSize = 12.sp, color = Gray500, lineHeight = 16.sp)
+            }
+        }
+        Spacer(Modifier.height(12.dp))
+        androidx.compose.material3.OutlinedTextField(
+            value = value,
+            onValueChange = onValueChange,
+            placeholder = { Text(placeholder, color = Gray500, fontSize = 14.sp) },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+            textStyle = androidx.compose.ui.text.TextStyle(fontSize = 15.sp),
+            colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
+                focusedBorderColor = Primary,
+                unfocusedBorderColor = BorderGray,
+                cursorColor = Primary
             )
         )
     }

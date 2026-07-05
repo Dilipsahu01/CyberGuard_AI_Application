@@ -14,4 +14,11 @@ object PipelineSingleton {
         }
         return instance!!
     }
+
+    @Synchronized
+    fun clear() {
+        instance?.close()
+        instance = null
+        Log.i("PipelineSingleton", "PipelineManager resources released and singleton cleared.")
+    }
 }

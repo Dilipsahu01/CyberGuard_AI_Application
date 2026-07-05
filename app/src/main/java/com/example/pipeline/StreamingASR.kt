@@ -91,4 +91,13 @@ class StreamingASR(context: Context) {
         fullTranscript = ""
         lastProcessedLength = 0
     }
+
+    fun close() {
+        stream?.release()
+        try {
+            recognizer?.release()
+        } catch (e: Exception) {
+            Log.e(tag, "Failed to release recognizer: ${e.message}")
+        }
+    }
 }

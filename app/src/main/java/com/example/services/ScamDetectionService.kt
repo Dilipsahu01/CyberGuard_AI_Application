@@ -38,6 +38,7 @@ import android.util.Log
 import android.os.Handler
 import android.os.Looper
 import android.widget.Toast
+import android.telephony.SmsManager
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import androidx.room.Room
@@ -150,6 +151,14 @@ class ScamDetectionService : Service() {
         currentCaller = intent?.getStringExtra(Constants.EXTRA_CALLER_NUMBER) ?: "Unknown"
         isScamDemo = intent?.getBooleanExtra("is_scam_scenario", false) ?: false
         serviceStartTime = System.currentTimeMillis()
+
+        // --- STAGE 1: SOS / EMERGENCY BYPASS ---
+        val emergencyNumbers = listOf("100", "101", "102", "112", "911", "999")
+        if (emergencyNumbers.contains(currentCaller.replace(Regex("[^0-9]"), ""))) {
+            Log.e(tag, "🚨 EMERGENCY SOS NUMBER DETECTED ($currentCaller). Bypassing AI processing completely to guarantee zero latency.")
+            stopSelf()
+            return START_NOT_STICKY
+        }
 
         // Foreground service with proper type handling
         val notification = buildNotification("CyberGuard AI Active", "CyberGuard AI is actively scanning this call.")
@@ -505,7 +514,7 @@ class ScamDetectionService : Service() {
                         currentSampleCount = 0 // Ping-pong: reset instantly to keep recording the next 3 seconds
                         
                         // --- 4. THE SLICER & AI PROCESSING (Background Thread) ---
-                        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Default).launch {
+                        serviceScope.launch {
                             val pipeline = pipelineManager
                             if (pipeline != null) {
                                 val sliceSize = 512
@@ -529,7 +538,10 @@ class ScamDetectionService : Service() {
                                     // Decision logic
                                     when {
                                         result.isRoboVoice -> broadcastRoboWarning()
-                                        result.score >= 70 -> endCallAndNotify(result)
+                                        result.score >= 70 -> {
+                                            endCallAndNotify(result)
+                                            dispatchGuardianAlert(currentCaller)
+                                        }
                                         isTrusted(currentCaller) -> { /* trusted – alert only */ }
                                         isWhitelisted(currentCaller) -> { /* whitelisted – no auto‑drop */ }
                                         else -> if (result.score > 40) broadcastRiskUpdate(result)
@@ -576,6 +588,27 @@ class ScamDetectionService : Service() {
         val intent = Intent("com.example.ACTION_ROBO_WARNING")
         sendBroadcast(intent)
         // In IncomingCallActivity, this will turn the screen light red and play an audio warning
+    }
+
+    private fun dispatchGuardianAlert(scammerNumber: String) {
+        val settingsPrefs = getSharedPreferences("cyberguard_settings", MODE_PRIVATE)
+        // If Guardian Protection is configured, send the background SMS alert
+        val guardianNumber = settingsPrefs.getString("guardian_number", null)
+        if (!guardianNumber.isNullOrEmpty()) {
+            try {
+                val smsManager: SmsManager = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    getSystemService(SmsManager::class.java)
+                } else {
+                    @Suppress("DEPRECATION")
+                    SmsManager.getDefault()
+                }
+                val message = "[CyberGuard Alert] A high-risk scam call from $scammerNumber was just intercepted on this device."
+                smsManager.sendTextMessage(guardianNumber, null, message, null, null)
+                Log.i(tag, "Guardian Alert SMS dispatched to $guardianNumber")
+            } catch (e: Exception) {
+                Log.e(tag, "Failed to dispatch Guardian Alert SMS: ${e.message}")
+            }
+        }
     }
 
     private fun buildNotification(title: String, text: String): Notification {
@@ -635,6 +668,10 @@ class ScamDetectionService : Service() {
         
         // Always release the WakeLock if held
         wakeLock?.let { if (it.isHeld) it.release() }
+        
+        // Explicitly close ONNX memory buffers and mapped byte buffers
+        com.example.pipeline.PipelineSingleton.clear()
+        
         serviceJob.cancel()
     }
 }

@@ -143,6 +143,7 @@ class PipelineManager(context: Context) {
     fun close() {
         vad.close()
         nlp.close()
+        asr.close()
     }
 
     private fun getLastNWords(text: String, n: Int = 100): String {

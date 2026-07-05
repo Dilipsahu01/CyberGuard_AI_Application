@@ -152,7 +152,7 @@ class ScamDetectionService : Service() {
         serviceStartTime = System.currentTimeMillis()
 
         // Foreground service with proper type handling
-        val notification = buildNotification("CyberGuard active on: $currentCaller", "Analyzing…")
+        val notification = buildNotification("CyberGuard AI Active", "CyberGuard AI is actively scanning this call.")
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                 startForeground(notificationId, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
@@ -610,8 +610,8 @@ class ScamDetectionService : Service() {
             while (isActive) {
                 delay(5000L)
                 val notification = buildNotification(
-                    "CyberGuard active on: $currentCaller",
-                    "Status: ${statusFlow.value} | Risk Score: ${scoreFlow.value}%"
+                    "CyberGuard AI Active",
+                    "CyberGuard AI is actively scanning this call."
                 )
                 val manager = getSystemService(NotificationManager::class.java)
                 manager.notify(notificationId, notification)

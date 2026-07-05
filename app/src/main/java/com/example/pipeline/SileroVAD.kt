@@ -1,3 +1,9 @@
+/**
+ * VAD (Voice Activity Detection) - Stage 1
+ * LEFT NODE (Input): Raw PCM 16-bit audio stream (from Mic/Telephony).
+ * RIGHT NODE (Output): Boolean (Speech Active) & Float (Probability 0.0 - 1.0).
+ * PURPOSE: Filters out silence to save battery before passing to ASR.
+ */
 package com.example.pipeline
 
 /**

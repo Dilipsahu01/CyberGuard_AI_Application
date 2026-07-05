@@ -1,3 +1,9 @@
+/**
+ * ASR (Automatic Speech Recognition) - Stage 2
+ * LEFT NODE (Input): VAD-approved PCM 16-bit audio frames.
+ * RIGHT NODE (Output): String (Raw transcribed text in Hindi/English).
+ * PURPOSE: Transcribes human speech to text using Sherpa-ONNX Fast Conformer.
+ */
 package com.example.pipeline
 
 /**

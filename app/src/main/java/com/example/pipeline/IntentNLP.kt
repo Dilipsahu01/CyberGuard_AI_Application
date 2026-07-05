@@ -1,3 +1,9 @@
+/**
+ * IntentNLP (Semantic Vector Classifier) - Stage 4
+ * LEFT NODE (Input): String (Transcribed text from ASR).
+ * RIGHT NODE (Output): Float (Risk Score 0.0 - 1.0 based on Cosine Similarity).
+ * PURPOSE: Uses MiniLM-L6 to understand context (financial coercion, urgency) via embeddings.
+ */
 package com.example.pipeline
 
 /**

@@ -1,3 +1,9 @@
+/**
+ * RegexGate (Deterministic Keyword Filter) - Stage 3
+ * LEFT NODE (Input): String (Transcribed text from ASR).
+ * RIGHT NODE (Output): Boolean (Scam Flag).
+ * PURPOSE: Instantly triggers alerts if known hardcoded blacklisted phrases are detected.
+ */
 package com.example.pipeline
 
 /**

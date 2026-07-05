@@ -2,6 +2,7 @@ package com.example.ui
 
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.assertIsDisplayed
@@ -42,8 +43,8 @@ class PermissionsTest {
         composeTestRule.onNodeWithText("Contacts").performScrollTo().assertIsDisplayed()
         composeTestRule.onNodeWithText("SMS Messages").performScrollTo().assertIsDisplayed()
 
-        // Perform click on the grant button
-        composeTestRule.onNodeWithText("Grant System Permissions").performScrollTo().performClick()
+        // Perform click on the grant button (index 1 is the button, index 0 is the screen title)
+        composeTestRule.onAllNodesWithText("Grant System Permissions")[1].performScrollTo().performClick()
 
         // Verify callback is triggered
         verify(exactly = 1) { mockGrantPermissions.invoke() }

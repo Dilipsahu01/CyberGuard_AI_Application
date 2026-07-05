@@ -22,7 +22,7 @@ class AdvancedSettingsScreenTest {
         }
 
         // Verify the screen renders the critical AI feature switches
-        composeTestRule.onNodeWithText("Deepfake Protection").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Deepfake Voice Protection").assertIsDisplayed()
         composeTestRule.onNodeWithText("Intent NLP Analysis").assertIsDisplayed()
 
         // Verify that the "Threat Sensitivity Level" slider is present
@@ -30,6 +30,6 @@ class AdvancedSettingsScreenTest {
 
         // Simulate a click to toggle the "Deepfake Voice Protection" switch.
         // We target the text row representing the toggle to ensure interaction works.
-        composeTestRule.onNodeWithText("Deepfake Protection").performClick()
+        composeTestRule.onNodeWithText("Deepfake Voice Protection").performClick()
     }
 }

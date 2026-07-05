@@ -2,6 +2,8 @@ package com.example.ui
 
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -75,6 +77,6 @@ class DialerScreenTest {
         composeTestRule.onNodeWithText("Dad").performClick()
 
         // Verify it autofilled the full number "+91 9876543211"
-        composeTestRule.onNodeWithText("+91 9876543211", substring = true).assertIsDisplayed()
+        composeTestRule.onAllNodesWithText("+91 9876543211", substring = true).onFirst().assertIsDisplayed()
     }
 }

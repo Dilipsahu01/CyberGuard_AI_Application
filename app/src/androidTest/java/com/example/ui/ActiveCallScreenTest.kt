@@ -34,8 +34,8 @@ class ActiveCallScreenTest {
         }
 
         // Assert no cyclic loop occurred, UI didn't crash, and state resolved cleanly
-        composeTestRule.onNodeWithText("Call Notes").assertIsDisplayed()
-        composeTestRule.onAllNodesWithText("Transcription").assertCountEquals(0)
+        composeTestRule.onNodeWithText("SCAM EVIDENCE PAD").assertIsDisplayed()
+        composeTestRule.onAllNodesWithText("LIVE AI TRANSCRIPT").assertCountEquals(0)
     }
 
     @Test
@@ -56,7 +56,7 @@ class ActiveCallScreenTest {
         }
 
         // Assert it rendered without crashing
-        composeTestRule.onNodeWithText("Threat Level: Low").assertIsDisplayed()
+        composeTestRule.onNodeWithText("+91 7622365663").assertIsDisplayed()
     }
 
     @Test
@@ -69,12 +69,12 @@ class ActiveCallScreenTest {
 
         // User expands the Captions Bottom Sheet
         composeTestRule.onNodeWithText("Captions").performClick()
-        composeTestRule.onNodeWithText("Transcription").assertIsDisplayed()
+        composeTestRule.onNodeWithText("LIVE AI TRANSCRIPT").assertIsDisplayed()
 
         // Simulate Device Configuration Change (Screen Rotation / Foldable State Change)
         restorationTester.emulateSavedInstanceStateRestore()
 
         // Assert state is perfectly preserved and layout didn't reset
-        composeTestRule.onNodeWithText("Transcription").assertIsDisplayed()
+        composeTestRule.onNodeWithText("LIVE AI TRANSCRIPT").assertIsDisplayed()
     }
 }

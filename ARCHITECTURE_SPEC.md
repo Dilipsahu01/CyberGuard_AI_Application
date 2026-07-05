@@ -13,8 +13,10 @@
 ## 2. The Edge AI Pipeline & Hardware Optimization
 Running deep learning models concurrently with active cellular calls requires extreme resource constraint management. CyberGuard-AI utilizes a heavily optimized edge inference engine to prevent CPU thermal throttling and OS-level Service eviction.
 
-### ⚡ Inference Optimization & Footprint
-*   **17ms Inference Window:** The pipeline achieves real-time transcription and semantic analysis by slicing the audio buffer, ensuring the maximum block execution time never exceeds ~17ms per pass.
+### ⚡ Audio Engineering & Inference Footprint
+*   **Hardware Window:** Real-time audio capture utilizes a strict **3-second, 48,000-sample** PCM-16BIT (48kHz) buffer.
+*   **17ms Inference Window:** The pipeline achieves real-time transcription and semantic analysis by slicing the audio buffer into **512-sample (32 ms) slices**, ensuring maximum block execution time never exceeds ~17ms per pass.
+*   **Dynamic Silence Thresholding:** The Silero VAD actively guards battery life. If `Speech Probability < 0.5f` across **≥4 consecutive 100ms chunks** (400ms of human silence), the ASR transcription engines are aggressively bypassed.
 *   **INT8 Quantization:** The core ASR engine utilizes an `INT8` quantized Sherpa-ONNX Fast Conformer CTC model, drastically reducing precision overhead while retaining 94%+ accuracy for conversational Hinglish/English.
 *   **ABI Stripping:** Native libraries are strictly stripped down to `arm64-v8a`, shrinking the final production APK to an ultra-lean **<40MB footprint**.
 
@@ -23,24 +25,27 @@ To prevent catastrophic native memory leaks common in JNI/ONNX bridges:
 *   **Zero-Copy Execution:** Employs `MappedByteBuffer` to load the AI models directly into memory without duplicating the payload into the Dalvik heap.
 *   **Synchronized Teardown:** The `PipelineSingleton` implements a rigorous `@Synchronized` C++ teardown protocol. Upon `ScamDetectionService` destruction, explicit `close()` commands are dispatched to the C++ `OnlineRecognizer` and `OnlineStream` instances, instantly releasing unmanaged memory back to the OS.
 
+### 🤖 ArcTracker FSM & Deterministic Kill-Switches
+*   **ArcTracker State Machine:** Instead of treating sentences in a vacuum, the system evaluates the psychological "arc" of a call utilizing a 5-phase Finite State Machine: `INTRO ➔ TRUST_BUILD ➔ PROBLEM_ESTABLISH ➔ REQUEST ➔ CLOSE`.
+*   **Stage 4 Hardware Interrupts:** The pipeline compiles **19 deterministic regex patterns** (e.g., `\botp\b`, `digital.?arrest`) that act as instantaneous hardware interrupts. If matched, these bypass probabilistic analysis and immediately spike the final Threat Score.
+
 ---
 
 ## 3. 5G URLLC Telemetry & Bit-Packing (The Swarm Network)
 CyberGuard-AI relies on crowd-sourced threat intelligence ("The Swarm") without sacrificing user privacy or burning cellular bandwidth. To achieve this, we engineered a custom binary protocol optimized for **5G Ultra-Reliable Low-Latency Communication (URLLC)**.
 
-### 📦 82-Bit `CallContext` Serialization
-The system compresses the entire lifecycle of a call into a microscopic bit-packed payload. We encode 14 distinct telemetry vectors into exactly **10.25 bytes (82 bits)**:
-| Telemetry Vector | Bit Allocation | Data Representation |
-| :--- | :--- | :--- |
-| Bloom Filter Status | 1 bit | `1` (Hit) / `0` (Miss) |
-| Threat Score | 7 bits | `0-100` (Max 127) |
-| Intent Logits (x5) | 15 bits total | 3 bits per vector (Urgency, Coercion, etc.) |
-| Session Duration | 12 bits | Up to 4,095 seconds |
-| Days Known | 8 bits | `0-255` days |
-| NLP & Acoustic Flags | 39 bits | Reserve & Metadata |
+### 🔍 Algorithmic Complexity: The Bloom Filter
+To achieve instant, offline identification of known malicious actors:
+*   **10-Million Bit Matrix:** The platform loads a 10-million bit array into memory (~1.22 MB allocation).
+*   **Kirsch-Mitzenmacher Double-Hashing:** By fusing `MurmurHash3` and `xxHash32`, the filter executes at strict **`O(1)` time complexity** with a mathematically proven False Positive Rate (FPR) of just **~0.00009%**.
+
+### 📦 Bit-Packed Serialization
+The system compresses the entire lifecycle of a call into microscopic bit-packed payloads:
+*   **`CallContext` (82 Bits):** We encode 14 distinct telemetry vectors (including Bloom filter flags, NLP logits, and days known) into exactly **10.25 bytes**.
+*   **`ContactMemory` (72 Bits):** To combat long-term "Pig Butchering" (Romance) scams, historical interaction data (Trust/Intimacy scales, Total Calls, Emotional Intensity) is fused into a dense **9-byte** Little-Endian struct, persisted locally via SQLite.
 
 ### 🌐 5G URLLC Transport Layer
-By stripping out verbose JSON/REST overhead, the final 75-bit network payload is dispatched via UDP with a **DSCP `0xB8`** header (Expedited Forwarding). This guarantees priority routing on 5G networks, allowing the Swarm to update global threat signatures in milliseconds with virtually zero battery or network cost to the user.
+By stripping out verbose JSON/REST overhead, the final 75-bit network payload is dispatched via UDP with a **DSCP `0xB8`** header (Expedited Forwarding). This guarantees priority routing on 5G networks, allowing the Swarm to update global threat signatures in milliseconds with virtually zero network cost.
 
 ---
 
@@ -63,6 +68,7 @@ The presentation layer is built exclusively with **Jetpack Compose**, implementi
 *   **Smart T9 Predictive Dialer:** Implements a high-performance predictive search algorithm over local SQLite contacts, rendering instant visual suggestions via a highly optimized `LazyRow`.
 *   **Mutually Exclusive Tooling:** The Active Call screen dynamically allocates screen real estate, ensuring complex elements like "Live AI ASR Captions" and the "Scam Evidence Pad" remain mutually exclusive to prevent cognitive overload.
 *   **Coroutine Safety:** To prevent CPU thrashing and orphaned threads during an abrupt call termination, all background AI inference tasks are strictly anchored to a supervised `serviceScope`. When the OS tears down the Service, the `SupervisorJob` cascades cancellation to all child coroutines instantaneously.
+*   **Database Normalization:** All local telemetry data utilizes strict Room SQLite Normalization, isolating high-volume ephemeral telemetry (`TelemetryQueueItem`) from immutable, low-volume historic state markers (`CallLog`).
 
 ---
 

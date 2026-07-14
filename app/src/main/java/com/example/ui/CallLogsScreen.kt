@@ -16,9 +16,10 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -47,26 +48,17 @@ private data class CallLogEntry(
     val expanded: Boolean = false
 )
 
-private val todayLogs = listOf(
-    CallLogEntry(CallDirection.OUTGOING, "Hardik Pandya", "Outgoing call, 1 m 12 secs", "12:30 PM", "Follow-Up Added"),
-    CallLogEntry(CallDirection.MISSED, "Call +917622365663", "Outgoing call, Not Received", "12:30 PM", expanded = true)
-)
 
-private val yesterdayLogs = listOf(
-    CallLogEntry(CallDirection.OUTGOING, "Call +917622365663", "Outgoing call, 1 m 12 secs", "12:32 PM", "Follow-Up Added"),
-    CallLogEntry(CallDirection.INCOMING, "Poonam Pandy", "Outgoing call, Not Received", "12:30 PM"),
-    CallLogEntry(CallDirection.MISSED, "Poonam Pandey", "Outgoing call, Not Received", "12:30 PM", expanded = true),
-    CallLogEntry(CallDirection.INCOMING, "Call +917622365663", "Outgoing call, Not Received", "12:30 PM"),
-    CallLogEntry(CallDirection.MISSED, "Call +917622365663", "Outgoing call, Not Received", "11:30 PM"),
-    CallLogEntry(CallDirection.MISSED, "Call +917622365663", "Outgoing call, Not Received", "10:30 PM")
-)
 
 @Composable
 fun CallLogsScreen(
     onNavigateToRecordings: () -> Unit = {},
     onOpenDialer: () -> Unit = {}
 ) {
-    var selectedTab by remember { mutableStateOf(0) }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val db = remember { com.example.models.ScamDatabase.getDatabase(context) }
+    val logs by db.callLogDao().getAllLogs().collectAsState(initial = emptyList())
+    var selectedTab by remember { mutableIntStateOf(0) }
 
     Surface(color = Color.White, modifier = Modifier.fillMaxSize()) {
         Box(modifier = Modifier.fillMaxSize()) {
@@ -83,10 +75,15 @@ fun CallLogsScreen(
                         modifier = Modifier.padding(top = 16.dp)
                     )
                 }
-                item { SectionHeader("Today") }
-                items(todayLogs) { CallLogRow(it) }
-                item { SectionHeader("Yesterday") }
-                items(yesterdayLogs) { CallLogRow(it) }
+                item { SectionHeader("All Logs") }
+                items(logs) { log ->
+                    val direction = if (log.wasBlocked) CallDirection.MISSED else CallDirection.INCOMING
+                    val sdf = java.text.SimpleDateFormat("hh:mm a", java.util.Locale.getDefault())
+                    val timeString = sdf.format(java.util.Date(log.timestamp))
+                    val durationStr = if (log.durationSeconds > 0) "${log.durationSeconds}s" else "Not Received"
+                    val subTitle = if (log.isScam) "Scam Blocked (Score: ${log.riskScore})" else "Call, $durationStr"
+                    CallLogRow(CallLogEntry(direction, log.callerNumber, subTitle, timeString))
+                }
                 item { Spacer(Modifier.height(96.dp)) }
             }
             FloatingDialerButton(

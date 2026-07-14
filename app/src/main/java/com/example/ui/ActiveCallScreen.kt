@@ -82,6 +82,8 @@ fun ActiveCallScreen(
                 Spacer(Modifier.width(4.dp))
                 Text(text = callDuration, color = Gray500, fontSize = 13.sp, fontWeight = FontWeight.Medium)
             }
+            Spacer(Modifier.height(8.dp))
+            Text(text = "Recording for AI Analysis", color = Primary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
 
             if (isScamDetected) {
                 Spacer(Modifier.height(32.dp))

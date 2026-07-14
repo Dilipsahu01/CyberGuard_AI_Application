@@ -1,0 +1,4 @@
+phone_number,contact_name,is_emergency_guardian,relationship
++919999999999,Mom,true,family
++918888888888,Hardik Pandya,false,colleague
++91112,Police,true,government

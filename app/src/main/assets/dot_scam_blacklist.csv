@@ -1,0 +1,4 @@
+phone_number,threat_category,severity_score,last_reported_timestamp
++919876543210,financial_fraud,95,1721000000000
++917622365663,cbi_impersonation,100,1721000000000
++915555555555,delivery_scam,70,1721000000000

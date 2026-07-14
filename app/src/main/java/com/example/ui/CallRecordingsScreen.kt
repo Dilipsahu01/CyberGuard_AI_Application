@@ -15,9 +15,10 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -34,29 +35,18 @@ private data class RecordingEntry(
     val progress: Float? = null // 0f..1f when currently "playing"; null otherwise
 )
 
-private val todayRecordings = listOf(
-    RecordingEntry("Call +917622365663", "Outgoing call, 12:30 PM", "05:42")
-)
 
-private val yesterdayRecordings = listOf(
-    RecordingEntry("Call +917622365663", "Outgoing call, 12:32 PM", "01:32", progress = 0.45f),
-    RecordingEntry("Call +917622365663", "Outgoing call, 10:32 AM", "03:27"),
-    RecordingEntry("Call +917622365663", "Outgoing call, 09:16 AM", "02:17")
-)
-
-private val olderRecordings = listOf(
-    RecordingEntry("Call +917622365663", "Outgoing call, 10:32 AM", "03:27"),
-    RecordingEntry("Call +917622365663", "Outgoing call, 10:32 AM", "03:27"),
-    RecordingEntry("Call +917622365663", "Outgoing call, 10:32 AM", "03:27"),
-    RecordingEntry("Call +917622365663", "Outgoing call, 10:32 AM", "03:27")
-)
 
 @Composable
 fun CallRecordingsScreen(
     onNavigateToCallLogs: () -> Unit = {},
     onOpenDialer: () -> Unit = {}
 ) {
-    var selectedTab by remember { mutableStateOf(1) }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val db = remember { com.example.models.ScamDatabase.getDatabase(context) }
+    // We only show recordings for logs that have duration > 0
+    val logs by db.callLogDao().getAllLogs().collectAsState(initial = emptyList())
+    var selectedTab by remember { mutableIntStateOf(1) }
 
     Surface(color = Color.White, modifier = Modifier.fillMaxSize()) {
         Box(modifier = Modifier.fillMaxSize()) {
@@ -73,12 +63,16 @@ fun CallRecordingsScreen(
                         modifier = Modifier.padding(top = 16.dp)
                     )
                 }
-                item { SectionHeader("Today") }
-                items(todayRecordings) { RecordingRow(it) }
-                item { SectionHeader("Yesterday") }
-                items(yesterdayRecordings) { RecordingRow(it) }
-                item { SectionHeader("27 Nov, 2024") }
-                items(olderRecordings) { RecordingRow(it) }
+                item { SectionHeader("All Recordings") }
+                val recordedLogs = logs.filter { it.durationSeconds > 0 }
+                items(recordedLogs) { log ->
+                    val sdf = java.text.SimpleDateFormat("MMM dd, hh:mm a", java.util.Locale.getDefault())
+                    val timeString = sdf.format(java.util.Date(log.timestamp))
+                    val mins = log.durationSeconds / 60
+                    val secs = log.durationSeconds % 60
+                    val durStr = String.format("%02d:%02d", mins, secs)
+                    RecordingRow(RecordingEntry(log.callerNumber, "Call, $timeString", durStr))
+                }
                 item { Spacer(Modifier.height(96.dp)) }
             }
             FloatingDialerButton(

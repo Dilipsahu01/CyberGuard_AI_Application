@@ -90,6 +90,7 @@ class ScamDetectionService : Service() {
     private val serviceScope = CoroutineScope(Dispatchers.Default + serviceJob)
     private var isRecording = false
     private var recordThread: Thread? = null
+    @Volatile private var audioRecord: AudioRecord? = null
     private var currentCaller = "Unknown"
     private var isScamDemo = false
     private var wakeLock: PowerManager.WakeLock? = null
@@ -108,7 +109,7 @@ class ScamDetectionService : Service() {
         .callTimeout(5, TimeUnit.SECONDS)
         .build()
     // Using local LAN IP for hackathon testing since Vercel does not support persistent SQLite Go servers
-    private val serverBaseUrl = "http://10.164.57.223:8080"
+    private val serverBaseUrl = com.example.BuildConfig.SERVER_BASE_URL
 
     // ---------- Service lifecycle ----------
     override fun onBind(intent: Intent?): IBinder = LocalBinder()
@@ -159,7 +160,7 @@ class ScamDetectionService : Service() {
             cleanNumber == emergency || (cleanNumber.endsWith(emergency) && cleanNumber.length <= emergency.length + 4)
         }
         if (isEmergency) {
-            Log.e(tag, "🚨 EMERGENCY SOS NUMBER DETECTED ($currentCaller). Bypassing AI processing completely to guarantee zero latency.")
+            Log.e(tag, "EMERGENCY SOS NUMBER DETECTED ($currentCaller). Bypassing AI processing completely to guarantee zero latency.")
             stopSelf()
             return START_NOT_STICKY
         }
@@ -184,8 +185,32 @@ class ScamDetectionService : Service() {
         // Load AI pipeline asynchronously
         serviceScope.launch {
             try {
-                // Load ContactMemory from SQLite
+                // Check DoT Blacklist before anything else
                 val db = ScamDatabase.getDatabase(this@ScamDetectionService)
+                val dotScammer = db.dotScammerDao().getScammer(PhoneNumberUtils.normalize(currentCaller))
+                if (dotScammer != null && dotScammer.severityScore >= 80) {
+                    Log.w(tag, "DoT Blacklist hit for $currentCaller! Dropping call instantly.")
+                    val dummyResult = RiskResult(
+                        score = dotScammer.severityScore, 
+                        transcript = "Blocked by Department of Telecommunications Blacklist", 
+                        isRoboVoice = false, 
+                        hitWord = "DoT_Blacklist",
+                        intents = IntentScores(100, 100, 100, 0, 0)
+                    )
+                    endCallAndNotify(dummyResult)
+                    stopSelf()
+                    return@launch
+                }
+
+                // Check Local Whitelist (Trusted Contact)
+                val localContact = db.localContactDao().getContact(PhoneNumberUtils.normalize(currentCaller))
+                if (localContact != null && localContact.isEmergencyGuardian) {
+                    Log.w(tag, "Trusted Guardian Contact ($currentCaller). Bypassing AI processing.")
+                    stopSelf()
+                    return@launch
+                }
+
+                // Load ContactMemory from SQLite
                 val numberHash = PhoneNumberUtils.hash(currentCaller)
                 val memoryEntity = db.contactMemoryDao().getMemory(numberHash)
                 val contactMemory = if (memoryEntity != null) ContactMemory.fromBytes(memoryEntity.memory) else ContactMemory()
@@ -242,7 +267,7 @@ class ScamDetectionService : Service() {
         serverWhitelist.add(PhoneNumberUtils.normalize(number))
     }
 
-    private fun isWhitelisted(number: String): Boolean {
+    private suspend fun isWhitelisted(number: String): Boolean {
         val normalized = PhoneNumberUtils.normalize(number)
         if (serverWhitelist.contains(normalized)) return true
         val settingsPrefs = getSharedPreferences("cyberguard_settings", MODE_PRIVATE)
@@ -250,10 +275,14 @@ class ScamDetectionService : Service() {
         return localWhitelist.any { PhoneNumberUtils.normalize(it) == normalized }
     }
 
-    private fun isTrusted(number: String): Boolean {
+    private suspend fun isTrusted(number: String): Boolean {
+        val normalized = PhoneNumberUtils.normalize(number)
+        val db = ScamDatabase.getDatabase(this)
+        val contact = db.localContactDao().getContact(normalized)
+        if (contact != null) return true
         val settingsPrefs = getSharedPreferences("cyberguard_settings", MODE_PRIVATE)
         val trustedContacts = settingsPrefs.getStringSet("trusted_contacts", null) ?: emptySet()
-        return trustedContacts.contains(PhoneNumberUtils.normalize(number))
+        return trustedContacts.contains(normalized)
     }
 
     // ---------- Telemetry push ----------
@@ -446,7 +475,7 @@ class ScamDetectionService : Service() {
             val audioFormat = AudioFormat.ENCODING_PCM_16BIT
             val minBuf = AudioRecord.getMinBufferSize(sampleRate, channelConfig, audioFormat)
             val bufferSize = minBuf.coerceAtLeast(3200)
-            var audioRecord: AudioRecord? = null
+            audioRecord = null
             // Try MIC then VOICE_RECOGNITION as fallbacks
             val sources = listOf(MediaRecorder.AudioSource.MIC, MediaRecorder.AudioSource.VOICE_RECOGNITION)
             for (src in sources) {
@@ -486,10 +515,7 @@ class ScamDetectionService : Service() {
 
             // --- 2. THE RECORDING LOOP ---
             while (isRecording) {
-                var readSize = 0
-                if (audioRecord != null) {
-                    readSize = audioRecord.read(tempShortBuffer, 0, tempShortBuffer.size)
-                }
+                var readSize = audioRecord?.read(tempShortBuffer, 0, tempShortBuffer.size) ?: 0
 
                 if (readSize <= 0 && isScamDemo) {
                     readSize = 512
@@ -524,10 +550,20 @@ class ScamDetectionService : Service() {
                                 val sliceSize = 512
                                 var lastResult: com.example.models.RiskResult? = null
                                 
+                                // Pre-allocate buffer to fix GC churn (Audit Issue 2.2)
+                                val sliceBuffer = FloatArray(sliceSize)
+                                
                                 // Chop the 3 seconds into tiny slices so Silero VAD doesn't crash
                                 for (i in chunkForAI.indices step sliceSize) {
                                     val end = minOf(i + sliceSize, chunkForAI.size)
-                                    val slice = chunkForAI.copyOfRange(i, end)
+                                    val length = end - i
+                                    
+                                    val slice = if (length == sliceSize) {
+                                        System.arraycopy(chunkForAI, i, sliceBuffer, 0, sliceSize)
+                                        sliceBuffer
+                                    } else {
+                                        chunkForAI.copyOfRange(i, end) // Only happens once at the very end of the chunk
+                                    }
                                     
                                     lastResult = pipeline.processChunk(slice)
                                 }
@@ -659,7 +695,10 @@ class ScamDetectionService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         isRecording = false
-        recordThread?.join(500)
+        try { audioRecord?.stop() } catch (_: Exception) {}
+        recordThread?.join(1000)
+        try { audioRecord?.release() } catch (_: Exception) {}
+        audioRecord = null
         
         // Save ContactMemory back to SQLite
         pipelineManager?.contactMemory?.let { memory ->

@@ -59,7 +59,7 @@ import com.example.ui.ActiveCallScreen
 class IncomingCallActivity : ComponentActivity() {
     private val TAG = "IncomingCallActivity"
 
-    private var score by mutableStateOf(0)
+    private var score by mutableIntStateOf(0)
     private var transcript by mutableStateOf("")
     private var hitWord by mutableStateOf("")
     private var callerNumber by mutableStateOf("Unknown Caller")

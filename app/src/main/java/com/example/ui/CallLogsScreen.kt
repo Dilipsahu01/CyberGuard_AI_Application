@@ -21,8 +21,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-private enum class CallDirection { OUTGOING, INCOMING, MISSED }
-
+// Removed private enum to use global CallDirection
 private data class CallLogEntry(
     val direction: CallDirection,
     val title: String,

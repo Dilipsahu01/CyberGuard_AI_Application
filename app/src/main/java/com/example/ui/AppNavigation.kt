@@ -95,5 +95,19 @@ fun AppNavigation(viewModel: PipelineViewModel) {
                 onBackClick = { navController.popBackStack() }
             )
         }
+
+        composable("scam_history") {
+            val appDb = com.example.database.AppDatabase.getDatabase(context)
+            val scamRepo = com.example.database.ScamRepository.getInstance(appDb)
+            
+            val scamHistoryViewModel: ScamHistoryViewModel = androidx.lifecycle.viewmodel.compose.viewModel(
+                factory = ScamHistoryViewModel.Factory(scamRepo)
+            )
+
+            ScamHistoryScreen(
+                viewModel = scamHistoryViewModel,
+                onBackClick = { navController.popBackStack() }
+            )
+        }
     }
 }

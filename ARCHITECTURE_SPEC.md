@@ -29,7 +29,7 @@ Running deep learning models concurrently with active cellular calls requires ex
 ### 🧠 Memory Safety & C++ Teardown
 To prevent catastrophic native memory leaks common in JNI/ONNX bridges:
 *   **Zero-Copy Execution:** Employs `MappedByteBuffer` to load the AI models directly into memory without duplicating the payload into the Dalvik heap.
-*   **Synchronized Teardown:** The `PipelineSingleton` implements a rigorous `@Synchronized` C++ teardown protocol. Upon `ScamDetectionService` destruction, explicit `close()` commands are dispatched to the C++ `OnlineRecognizer` and `OnlineStream` instances, instantly releasing unmanaged memory back to the OS.
+*   **Synchronized Teardown:** The `PipelineSingleton` implements a rigorous `@Synchronized` C++ teardown protocol. Upon `ScamDetectionService` destruction, explicit `close()` commands are dispatched to the C++ instances within strict `try-finally` blocks to guarantee release even during abrupt OS eviction.
 
 ### 🛡️ V1.1 Advanced Cryptography (The Vault)
 CyberGuard-AI ensures that its intellectual property (150MB ONNX and VAD models) cannot be reverse-engineered or extracted on rooted devices.
@@ -76,12 +76,14 @@ Designed specifically for the elderly and cognitively vulnerable. When the local
 ---
 
 ## 5. Concurrency & UI Architecture
-The presentation layer is built exclusively with **Jetpack Compose**, implementing a fluid, reactive state machine driven by Kotlin `StateFlows`.
+The presentation layer is built exclusively with **Jetpack Compose**, implementing a fluid, reactive state machine driven by Kotlin `StateFlows` and observing via `collectAsStateWithLifecycle()`.
 
+*   **Directional UI Logic & Predictive Back:** The `ActiveCallViewModel` handles `CallDirection` state seamlessly distinguishing Incoming/Outgoing UI flows. The system natively supports Android 14 predictive back gestures via `android:enableOnBackInvokedCallback="true"`.
+*   **Data Persistence (Room):** Incorporates a strict **Room Database** persistence layer. Threat data is persisted asynchronously utilizing a `ScamRepository` pattern, completely non-blocking to the inference stream via fire-and-forget `Dispatchers.IO` coroutines. `ScamHistoryViewModel` utilizes `SharingStarted.WhileSubscribed(5000)` to efficiently cancel Flow subscriptions when UI is backgrounded.
 *   **Smart T9 Predictive Dialer:** Implements a high-performance predictive search algorithm over local SQLite contacts, rendering instant visual suggestions via a highly optimized `LazyRow`.
 *   **Mutually Exclusive Tooling:** The Active Call screen dynamically allocates screen real estate, ensuring complex elements like "Live AI ASR Captions" and the "Scam Evidence Pad" remain mutually exclusive to prevent cognitive overload.
 *   **Coroutine Safety:** To prevent CPU thrashing and orphaned threads during an abrupt call termination, all background AI inference tasks are strictly anchored to a supervised `serviceScope`. When the OS tears down the Service, the `SupervisorJob` cascades cancellation to all child coroutines instantaneously.
-*   **Database Normalization:** All local telemetry data utilizes strict Room SQLite Normalization, isolating high-volume ephemeral telemetry (`TelemetryQueueItem`) from immutable, low-volume historic state markers (`CallLog`).
+*   **ProGuard/R8 Integrity:** Preserves crucial runtime structures by protecting `androidx.compose.runtime.snapshots.Snapshot` in `proguard-rules.pro`.
 
 ---
 

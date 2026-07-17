@@ -804,20 +804,15 @@ class ScamDetectionService : Service() {
         val startTime = serviceStartTime
 
         // Safe Asynchronous Hardware & DB Teardown
-        // We use GlobalScope here because the serviceScope is cancelled, and we MUST ensure
-        // hardware release and DB logging complete.
         @OptIn(DelicateCoroutinesApi::class)
         GlobalScope.launch(Dispatchers.IO) {
             try {
-                Log.d(tag, "Background Teardown: Stopping and releasing AudioRecord...")
                 currentAudioRecord?.stop()
                 currentAudioRecord?.release()
-                Log.d(tag, "Background Teardown: AudioRecord released.")
             } catch (e: Exception) {
                 Log.e(tag, "Background Teardown: AudioRecord release failed", e)
             }
 
-            // Save Call Log & Memory
             try {
                 val finalResult = currentPipeline?.getLatestResult()
                 val durationSeconds = ((System.currentTimeMillis() - startTime) / 1000).toInt()
@@ -843,29 +838,33 @@ class ScamDetectionService : Service() {
                     val numberHash = PhoneNumberUtils.hash(caller)
                     db.contactMemoryDao().saveMemory(ContactMemoryEntity(numberHash, memory.toBytes(), System.currentTimeMillis()))
                 }
-                Log.d(tag, "Background Teardown: Call logs and memory saved.")
             } catch (e: Exception) {
                 Log.e(tag, "Background Teardown: Database logging failed", e)
             }
 
-            // Release WakeLock
             try {
                 if (currentWakeLock?.isHeld == true) {
                     currentWakeLock.release()
-                    Log.d(tag, "Background Teardown: WakeLock released.")
                 }
             } catch (e: Exception) {
                 Log.e(tag, "Background Teardown: WakeLock release failed", e)
             }
 
-            // Clear ONNX/Singleton
             com.example.pipeline.PipelineSingleton.clear()
-            Log.d(tag, "Background Teardown: Pipeline cleared.")
         }
 
-        // Notify UI immediately on Main Thread
         com.example.utils.CallStateBroadcaster.endCall()
 
-        super.onDestroy()
+        // 1. Ensure the C++ layer is explicitly notified to free the mmap buffers
+        try {
+            pipelineManager?.close()
+            pipelineManager = null
+        } catch (e: Exception) {
+            Log.e("ScamDetectionService", "Error during native cleanup: ${e.message}")
+        } finally {
+            // 2. Cancel the coroutine scope so no DB operations hang in limbo
+            serviceScope.cancel()
+            super.onDestroy()
+        }
     }
 }

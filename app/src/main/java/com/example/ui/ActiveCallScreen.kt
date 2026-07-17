@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.material.icons.filled.Bluetooth
 import androidx.compose.material.icons.filled.CallEnd
 import androidx.compose.material.icons.automirrored.filled.CallMade
@@ -56,11 +57,46 @@ val AlertRedBorder = Color(0xFFEF4444)
 
 @Composable
 fun ActiveCallScreen(
+    viewModel: ActiveCallViewModel = androidx.lifecycle.viewmodel.compose.viewModel(),
     phoneNumber: String = "+91 7622365663",
     callDuration: String = "01:24",
     isScamDetected: Boolean = false,
     liveTranscript: String = "",
     onEndCall: () -> Unit = {}
+) {
+    val direction by viewModel.callDirection.collectAsStateWithLifecycle()
+
+    when (direction) {
+        CallDirection.INCOMING -> ActiveCallLayout(
+            phoneNumber = phoneNumber,
+            callDuration = "Incoming...",
+            isScamDetected = isScamDetected,
+            liveTranscript = liveTranscript,
+            onEndCall = onEndCall,
+            isIncoming = true
+        )
+        CallDirection.OUTGOING -> ActiveCallLayout(
+            phoneNumber = phoneNumber,
+            callDuration = callDuration,
+            isScamDetected = isScamDetected,
+            liveTranscript = liveTranscript,
+            onEndCall = onEndCall,
+            isIncoming = false
+        )
+        else -> {
+            // No UI for missed calls here
+        }
+    }
+}
+
+@Composable
+fun ActiveCallLayout(
+    phoneNumber: String,
+    callDuration: String,
+    isScamDetected: Boolean,
+    liveTranscript: String,
+    onEndCall: () -> Unit,
+    isIncoming: Boolean
 ) {
     // States to manage the advanced tools
     var showCaptions by rememberSaveable { mutableStateOf(false) }

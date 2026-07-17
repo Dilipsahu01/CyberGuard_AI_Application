@@ -21,10 +21,16 @@ class ScamRepository private constructor(private val scamDao: ScamDao) {
 
     val scamHistory: Flow<List<ScamCallEntity>> = scamDao.getAllScams()
 
+    // Using `suspend` forces the caller to provide the Thread context
     suspend fun insertScam(call: ScamCallEntity) {
         scamDao.insertScam(call)
-        // Cleanup records older than 30 days
+        
+        // Auto-cleanup records older than 30 days (2,592,000,000 ms)
         val threshold = System.currentTimeMillis() - 2592000000L
+        scamDao.deleteOldRecords(threshold)
+    }
+
+    suspend fun deleteOldRecords(threshold: Long) {
         scamDao.deleteOldRecords(threshold)
     }
 }

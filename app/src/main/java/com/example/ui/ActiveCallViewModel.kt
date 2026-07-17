@@ -10,7 +10,16 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
+enum class CallDirection { INCOMING, OUTGOING, MISSED }
+
 class ActiveCallViewModel : ViewModel() {
+    private val _callDirection = MutableStateFlow(CallDirection.OUTGOING)
+    val callDirection: StateFlow<CallDirection> = _callDirection.asStateFlow()
+
+    fun setCallDirection(direction: CallDirection) {
+        _callDirection.value = direction
+    }
+
     private val _isMuted = MutableStateFlow(false)
     val isMuted: StateFlow<Boolean> = _isMuted.asStateFlow()
 

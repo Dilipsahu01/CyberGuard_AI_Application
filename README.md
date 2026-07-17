@@ -59,8 +59,9 @@ Engineered with **Dynamic Thermal Edge Routing**, the architecture seamlessly ma
 | **Edge-to-Cloud Integration** | Seamless, encrypted communication between user devices and our secure Swarm backend via UDP 5G URLLC telemetry. |
 | **Network Resiliency** | Innovative fallback protocols designed for degraded 5G and Non-Terrestrial Network (NTN) environments. |
 | **Hardware Encryption (V1.1)** | AI Models are AES-256 encrypted at rest and decrypted dynamically into volatile RAM via Android Hardware Keystore to prevent theft on rooted devices. |
-| **Zero-Allocation Profiling (V1.1)** | Utilizes a strict Producer-Consumer Coroutine Channel and a `ConcurrentLinkedQueue` object pool to completely eliminate Garbage Collection thrashing and thermal spikes during audio capture. |
+| **Zero-Allocation Profiling (V1.1)** | Utilizes a strict Producer-Consumer Coroutine Channel, memory-mapped C++ ONNX pipeline, and a `ConcurrentLinkedQueue` object pool to completely eliminate Garbage Collection thrashing and thermal spikes during audio capture. Includes try-finally native memory cleanup. |
 | **Offline Threat Intel (V1.1)** | 10,000+ known threat vectors loaded into a C++ optimized BloomFilter on startup, enabling instantaneous caller rejection without waking up the ML models or requesting cloud APIs. |
+| **Data Persistence & Safe UI (V1.1)** | Powered by an asynchronous Room Database using Repository/Flow patterns, and features a Reactive Jetpack Compose UI with directional call logic (Incoming/Outgoing) alongside predictive back gesture support. Main-thread safety is guaranteed for all UI operations. |
 
 ---
 

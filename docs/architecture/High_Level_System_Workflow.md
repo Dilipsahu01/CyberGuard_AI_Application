@@ -79,7 +79,7 @@ graph TD
 
 ### **Stage 6: Telemetry Reporting & Synchronizations**
 1. **Normalizing Identity**: When the call completes, `saveCallToDatabase()` is triggered inside `onDestroy()`. The caller's phone number is normalized using `PhoneNumberUtils.normalize()` to standardized E.164 formats.
-2. **Database Logger**: Call logs and historic frequency records are safely inserted into the local SQLite Room DB (`ScamDatabase`).
+2. **Database Logger**: Call logs and historic frequency records are safely inserted into the local SQLite Room DB (`ScamDatabase`) utilizing asynchronous `suspend` Repository patterns on `Dispatchers.IO` to ensure Main-thread safety. UI state updates are securely observed via `ScamHistoryViewModel` utilizing `SharingStarted.WhileSubscribed(5000)` to elegantly halt Flow collections and release memory when backgrounded.
 3. **Feedback-Driven Telemetry Filter**: Telemetry is ONLY pushed if a False Positive or False Negative occurs. The app compares its `RiskScore` against the user's manual Post-Call feedback.
 4. **Network Slice Prioritization**: `SwarmReporter.reportScam()` prepares the compressed payload:
    * Caller phone number is hashed via SHA-256 for privacy.
@@ -162,7 +162,7 @@ Through static companion object buffer pooling and zero-allocation primitive loo
 ### **2. Services & Listeners**
 *   **`com.example.services.ScamDetectionService`** (`app/src/main/java/com/example/services/ScamDetectionService.kt`)
     *   *Responsibility*: Foregrounds calling analysis, initializes `PipelineManager` asynchronously on `Dispatchers.IO`, manages raw audio captures, handles database inserts, and posts telemetry.
-    *   *Lifecycle*: Bound to system calling states. Cleans up all allocations on calling shutdown.
+    *   *Lifecycle*: Bound to system calling states. Cleans up all allocations on calling shutdown, safely wrapping the native `pipelineManager.close()` within a strict `try-finally` block to prevent leaks during OS teardown.
 *   **`com.example.services.BootReceiver`** (`app/src/main/java/com/example/services/BootReceiver.kt`)
     *   *Responsibility*: Captures system boot signals to sync offline database backlogs using a coroutine bound to `goAsync()`.
 *   **`com.example.CyberGuardApplication`** (`app/src/main/java/com/example/CyberGuardApplication.kt`)

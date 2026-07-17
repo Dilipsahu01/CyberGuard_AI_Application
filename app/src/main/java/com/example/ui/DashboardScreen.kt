@@ -30,6 +30,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 
 // Reusing your established theme colors, plus a green for safe/active status
 val SwarmGreen = Color(0xFF16A34A)
@@ -37,10 +40,14 @@ val SwarmGreenBg = Color(0xFFDCFCE7)
 
 @Composable
 fun DashboardScreen(
+    viewModel: PipelineViewModel? = null,
     onNavigateToDialer: () -> Unit = {},
     onNavigateToSettings: () -> Unit = {},
     onNavigateToLogs: () -> Unit = {}
 ) {
+    val scamLogs by viewModel?.scamLogs?.collectAsState(initial = emptyList()) ?: remember { mutableStateOf(emptyList()) }
+    val allLogs by viewModel?.allLogs?.collectAsState(initial = emptyList()) ?: remember { mutableStateOf(emptyList()) }
+
     Surface(color = Color.White, modifier = Modifier.fillMaxSize()) {
         Box(modifier = Modifier.fillMaxSize()) {
             Column(
@@ -62,7 +69,7 @@ fun DashboardScreen(
                     Spacer(Modifier.height(24.dp))
 
                     // ---- Hero Stat Card ----
-                    ThreatHeroCard()
+                    ThreatHeroCard(scamLogs.size.toString())
 
                     Spacer(Modifier.height(32.dp))
 
@@ -146,7 +153,7 @@ private fun SwarmActiveBadge() {
 }
 
 @Composable
-private fun ThreatHeroCard() {
+private fun ThreatHeroCard(count: String = "27") {
     Card(
         shape = RoundedCornerShape(14.dp),
         colors = CardDefaults.cardColors(containerColor = Primary),
@@ -167,7 +174,7 @@ private fun ThreatHeroCard() {
                 Spacer(Modifier.height(4.dp))
                 Row(verticalAlignment = Alignment.Bottom) {
                     Text(
-                        text = "27",
+                        text = count,
                         color = Color.White,
                         fontSize = 48.sp,
                         fontWeight = FontWeight.Bold,

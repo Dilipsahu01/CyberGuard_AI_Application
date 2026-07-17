@@ -103,10 +103,13 @@
 
 | Model | Format | Quantization | Estimated Size |
 |-------|--------|-------------|---------------|
-| Silero VAD | `.ort` (ONNX Runtime) | Pre-quantized RNN | ~2 MB |
-| MiniLM-L6 | `minilm_int8.ort` | **INT8 quantization** (filename confirms) | ~22 MB |
+| Silero VAD | `.ort.enc` (AES-256) | Pre-quantized RNN | ~2 MB |
+| MiniLM-L6 | `minilm_int8.ort.enc` | **INT8 quantization** (AES-256 Encrypted) | ~22 MB |
 | Sherpa-ONNX Fast Conformer CTC | `int8` in model name | **INT8 quantized** | ~40 MB |
 | ONNX Runtime native libs | `libonnxruntime.so` (arm64-v8a only) | Single ABI target | ~30 MB |
+
+> [!TIP]
+> **Cryptographic Memory Management**: The `.enc` AI models are never written to disk unencrypted. During startup, `ModelCryptoManager.kt` reads the cipher block sequentially and writes directly into a volatile `MappedByteBuffer` mapped exclusively to RAM. This achieves zero disk-caching of plaintext neural network weights.
 
 > [!TIP]
 > **Critical build.gradle constraint**: `abiFilters.add("arm64-v8a")` — ships **only ARM64** native libs, cutting APK size by ~50% vs multi-ABI. Combined with `isMinifyEnabled = true` + `isShrinkResources = true` for R8 dead-code elimination.

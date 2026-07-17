@@ -45,14 +45,38 @@ class StreamingASR(context: Context) {
             
             Log.i(tag, "Dynamic ASR model discovery selected: $modelDirName (Type: $modelType)")
             
+            // 1. Decrypt the model to a secure directory (since Sherpa-ONNX requires physical files)
+            val secureDir = java.io.File(context.noBackupFilesDir, "secure_models")
+            if (!secureDir.exists()) secureDir.mkdirs()
+            
+            val decryptedModelFile = com.example.security.ModelCryptoManager.decryptModelToCache(
+                context, 
+                "$modelDirName/model.int8.onnx", 
+                "model.int8.onnx"
+            )
+            
+            // 2. Copy tokens.txt to the same directory
+            val tokensFile = java.io.File(secureDir, "tokens.txt")
+            if (!tokensFile.exists()) {
+                context.assets.open("$modelDirName/tokens.txt").use { input ->
+                    tokensFile.outputStream().use { output ->
+                        input.copyTo(output)
+                    }
+                }
+            }
+            
             val config = getOnlineRecognizerConfig(
-                modelDir = modelDirName,
+                modelDir = secureDir.absolutePath,
                 type = modelType,
                 numThreads = 2,
             )
-            recognizer = OnlineRecognizer(context.assets, config)
+            // Sherpa-ONNX uses provider in config.modelConfig.provider. We set it to "nnapi" if possible.
+            config.modelConfig.provider = "nnapi"
+            
+            // Initialize without AssetManager to force reading from the physical decrypted file
+            recognizer = OnlineRecognizer(assetManager = null, config = config)
             stream = recognizer?.createStream()
-            Log.d(tag, "Sherpa-ONNX Engine Loaded Successfully!")
+            Log.d(tag, "Sherpa-ONNX Engine Loaded Successfully from secure cache with NNAPI delegate!")
         } catch (e: Exception) {
             Log.e(tag, "Failed to load Sherpa-ONNX: ${e.message}")
         }

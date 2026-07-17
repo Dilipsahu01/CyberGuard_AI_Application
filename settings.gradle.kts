@@ -26,3 +26,4 @@ dependencyResolutionManagement {
 rootProject.name = "CyberGuard AI"
 
 include(":app")
+include(":macrobenchmark")

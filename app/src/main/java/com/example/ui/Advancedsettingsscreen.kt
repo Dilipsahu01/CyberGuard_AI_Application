@@ -15,6 +15,7 @@ import androidx.compose.material.icons.filled.HealthAndSafety
 import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.RecordVoiceOver
 import androidx.compose.material.icons.filled.Storage
+import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Warning
@@ -119,6 +120,24 @@ fun AdvancedSettingsScreen(
                             value = guardianNumber,
                             onValueChange = { guardianNumber = it },
                             placeholder = "e.g. +1 555-0100"
+                        )
+                    }
+                }
+
+                item {
+                    SettingsSection(title = "System Configuration") {
+                        SettingsLinkRow(
+                            icon = Icons.Filled.Security,
+                            title = "App Permissions & Roles",
+                            subtitle = "Manage Microphone, Default Dialer, and Call Screening roles required for the AI to function.",
+                            linkText = "Open OS Settings",
+                            onLinkClick = {
+                                val intent = android.content.Intent(
+                                    android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                                    android.net.Uri.parse("package:${context.packageName}")
+                                )
+                                context.startActivity(intent)
+                            }
                         )
                     }
                 }

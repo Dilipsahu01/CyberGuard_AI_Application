@@ -49,17 +49,9 @@ class CyberGuardScreeningService : CallScreeningService() {
             val response = CallResponse.Builder().build()
             respondToCall(callDetails, response)
 
-            // Start analyzing the incoming call stream
-            val context = applicationContext
-            val intent = Intent(context, ScamDetectionService::class.java).apply {
-                putExtra(Constants.EXTRA_CALLER_NUMBER, rawNumber)
-                putExtra("is_scam_scenario", false) // Real call monitoring
-            }
-            if (true) {
-                context.startForegroundService(intent)
-            } else {
-                context.startService(intent)
-            }
+            // ScamDetectionService is NOT started here — InCallService will start it
+            // when the call reaches STATE_ACTIVE (answered). Starting it during ringing
+            // would grab the mic before an audio route exists, capturing garbage audio.
         }
     }
 }

@@ -13,17 +13,30 @@
 ## 2. The Edge AI Pipeline & Hardware Optimization
 Running deep learning models concurrently with active cellular calls requires extreme resource constraint management. CyberGuard-AI utilizes a heavily optimized edge inference engine to prevent CPU thermal throttling and OS-level Service eviction.
 
-### ⚡ Audio Engineering & Inference Footprint
+### ⚡ Audio Engineering & Hardware Delegation
 *   **Hardware Window:** Real-time audio capture utilizes a strict **3-second, 48,000-sample** PCM-16BIT (48kHz) buffer.
-*   **17ms Inference Window:** The pipeline achieves real-time transcription and semantic analysis by slicing the audio buffer into **512-sample (32 ms) slices**, ensuring maximum block execution time never exceeds ~17ms per pass.
-*   **Dynamic Silence Thresholding:** The Silero VAD actively guards battery life. If `Speech Probability < 0.5f` across **≥4 consecutive 100ms chunks** (400ms of human silence), the ASR transcription engines are aggressively bypassed.
+*   **Zero-Allocation Object Pool:** To completely eliminate Garbage Collection (GC) thrashing and thermal spikes during audio capture, the pipeline utilizes a `ConcurrentLinkedQueue` as an object pool. Audio buffers are reused endlessly via a Producer-Consumer coroutine channel, ensuring 0 dropped frames.
+*   **Hardware Delegation (NNAPI):** The ONNX Runtime explicitly routes tensor operations through Android's Neural Networks API (NNAPI) delegate, utilizing the device's native NPU/GPU for accelerated inference while maintaining a safe CPU fallback.
 *   **INT8 Quantization:** The core ASR engine utilizes an `INT8` quantized Sherpa-ONNX Fast Conformer CTC model, drastically reducing precision overhead while retaining 94%+ accuracy for conversational Hinglish/English.
 *   **ABI Stripping:** Native libraries are strictly stripped down to `arm64-v8a`, shrinking the final production APK to an ultra-lean **<40MB footprint**.
+
+### 🧠 The Cascading Gate Logic & ADPF Thermal Protection
+Running deep learning models concurrently with active cellular calls requires extreme resource constraint management. `PipelineManager.kt` implements a strict 3-step cascading gate to protect battery and hardware:
+1. **VAD Utterance Gating:** The heavy 25MB ONNX Intent LLM remains asleep during mid-sentence analysis. It only fires when `utteranceEnded == true`, drastically saving NPU compute.
+2. **The Fast-Talker Exploit Fix:** If a scammer attempts to bypass the VAD gate by speaking continuously without a breath, the LLM forcefully wakes up every 5 conversational turns to guarantee unbroken contextual awareness.
+3. **ADPF Thermal API Routing:** The pipeline directly integrates with the Android Dynamic Performance Framework (ADPF). By continuously polling `getThermalHeadroom()`, the system dynamically skips ONNX NLP execution if the device reaches **85% thermal capacity**, gracefully falling back to the zero-compute Regex gate to prevent OS-level throttling or device damage.
 
 ### 🧠 Memory Safety & C++ Teardown
 To prevent catastrophic native memory leaks common in JNI/ONNX bridges:
 *   **Zero-Copy Execution:** Employs `MappedByteBuffer` to load the AI models directly into memory without duplicating the payload into the Dalvik heap.
 *   **Synchronized Teardown:** The `PipelineSingleton` implements a rigorous `@Synchronized` C++ teardown protocol. Upon `ScamDetectionService` destruction, explicit `close()` commands are dispatched to the C++ `OnlineRecognizer` and `OnlineStream` instances, instantly releasing unmanaged memory back to the OS.
+
+### 🛡️ V1.1 Advanced Cryptography (The Vault)
+CyberGuard-AI ensures that its intellectual property (150MB ONNX and VAD models) cannot be reverse-engineered or extracted on rooted devices.
+*   **AES-GCM Encryption:** Models are encrypted at rest using AES-GCM and stored securely as `.enc` files.
+*   **Hardware-Backed Keystore:** The master decryption key is safely locked within the Android Keystore system. It is generated natively inside the `libcyberguard_secrets.so` JNI library and loaded dynamically into the hardware Trusted Execution Environment (TEE).
+*   **RAM-Only Decryption & Integrity:** `ModelCryptoManager.kt` decrypts the ONNX models sequentially into volatile RAM using an `InputStream`. The `ModelIntegrityVerifier.kt` strictly checks the SHA-256 cryptographic hashes against signed baselines to instantly reject poisoned neural networks.
+*   **Environmental Security:** `EnvironmentGuard.kt` intercepts the background service initialization and scans the `$PATH` for `su` binaries, test-keys, and `rw` system mounts to crash the app if the execution environment is compromised.
 
 ### 🤖 ArcTracker FSM & Deterministic Kill-Switches
 *   **ArcTracker State Machine:** Instead of treating sentences in a vacuum, the system evaluates the psychological "arc" of a call utilizing a 5-phase Finite State Machine: `INTRO ➔ TRUST_BUILD ➔ PROBLEM_ESTABLISH ➔ REQUEST ➔ CLOSE`.

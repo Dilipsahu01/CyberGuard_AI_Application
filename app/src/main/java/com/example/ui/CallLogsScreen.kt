@@ -45,20 +45,61 @@ private data class CallLogEntry(
     val subtitle: String,
     val timeTop: String,
     val timeBottom: String? = null,
-    val expanded: Boolean = false
+    val expanded: Boolean = false,
+    val count: Int = 1
 )
 
 
 
 @Composable
 fun CallLogsScreen(
+    viewModel: PipelineViewModel? = null,
     onNavigateToRecordings: () -> Unit = {},
     onOpenDialer: () -> Unit = {}
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val db = remember { com.example.models.ScamDatabase.getDatabase(context) }
-    val logs by db.callLogDao().getAllLogs().collectAsState(initial = emptyList())
+    // We can just use the db direct state or the viewModel state
+    val logs by (viewModel?.allLogs ?: db.callLogDao().getAllLogs()).collectAsState(initial = emptyList())
     var selectedTab by remember { mutableIntStateOf(0) }
+    
+    val groupedLogs = remember(logs) {
+        val grouped = mutableListOf<CallLogEntry>()
+        if (logs.isEmpty()) return@remember grouped
+        
+        var currentGroupCount = 1
+        var currentLog = logs.first()
+        
+        for (i in 1 until logs.size) {
+            val log = logs[i]
+            if (log.callerNumber == currentLog.callerNumber && log.wasBlocked == currentLog.wasBlocked) {
+                currentGroupCount++
+            } else {
+                val direction = if (currentLog.wasBlocked) CallDirection.MISSED else CallDirection.INCOMING
+                val sdf = java.text.SimpleDateFormat("hh:mm a", java.util.Locale.getDefault())
+                val timeString = sdf.format(java.util.Date(currentLog.timestamp))
+                val durationStr = if (currentLog.durationSeconds > 0) "${currentLog.durationSeconds}s" else "Not Received"
+                val subTitle = if (currentLog.isScam) "Scam Blocked (Score: ${currentLog.riskScore})" else "Call, $durationStr"
+                
+                val title = if (currentGroupCount > 1) "${currentLog.callerNumber} ($currentGroupCount)" else currentLog.callerNumber
+                grouped.add(CallLogEntry(direction, title, subTitle, timeString, count = currentGroupCount))
+                
+                currentLog = log
+                currentGroupCount = 1
+            }
+        }
+        
+        // Add the last group
+        val direction = if (currentLog.wasBlocked) CallDirection.MISSED else CallDirection.INCOMING
+        val sdf = java.text.SimpleDateFormat("hh:mm a", java.util.Locale.getDefault())
+        val timeString = sdf.format(java.util.Date(currentLog.timestamp))
+        val durationStr = if (currentLog.durationSeconds > 0) "${currentLog.durationSeconds}s" else "Not Received"
+        val subTitle = if (currentLog.isScam) "Scam Blocked (Score: ${currentLog.riskScore})" else "Call, $durationStr"
+        val title = if (currentGroupCount > 1) "${currentLog.callerNumber} ($currentGroupCount)" else currentLog.callerNumber
+        grouped.add(CallLogEntry(direction, title, subTitle, timeString, count = currentGroupCount))
+        
+        grouped
+    }
 
     Surface(color = Color.White, modifier = Modifier.fillMaxSize()) {
         Box(modifier = Modifier.fillMaxSize()) {
@@ -76,13 +117,9 @@ fun CallLogsScreen(
                     )
                 }
                 item { SectionHeader("All Logs") }
-                items(logs) { log ->
-                    val direction = if (log.wasBlocked) CallDirection.MISSED else CallDirection.INCOMING
-                    val sdf = java.text.SimpleDateFormat("hh:mm a", java.util.Locale.getDefault())
-                    val timeString = sdf.format(java.util.Date(log.timestamp))
-                    val durationStr = if (log.durationSeconds > 0) "${log.durationSeconds}s" else "Not Received"
-                    val subTitle = if (log.isScam) "Scam Blocked (Score: ${log.riskScore})" else "Call, $durationStr"
-                    CallLogRow(CallLogEntry(direction, log.callerNumber, subTitle, timeString))
+
+                items(groupedLogs) { entry ->
+                    CallLogRow(entry)
                 }
                 item { Spacer(Modifier.height(96.dp)) }
             }
@@ -130,7 +167,12 @@ private fun CallLogRow(entry: CallLogEntry) {
             Icon(imageVector = icon, contentDescription = null, tint = tint, modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(10.dp))
             Column(Modifier.weight(1f)) {
-                Text(entry.title, fontSize = 15.sp, fontWeight = FontWeight.Medium, color = Gray800)
+                Text(
+                    text = entry.title, 
+                    fontSize = 15.sp, 
+                    fontWeight = if (entry.direction == CallDirection.MISSED) FontWeight.Bold else FontWeight.Medium, 
+                    color = if (entry.direction == CallDirection.MISSED) AlertRedBorder else Gray800
+                )
                 Text(entry.subtitle, fontSize = 13.sp, color = MutedForeground)
             }
             Column(horizontalAlignment = Alignment.End) {

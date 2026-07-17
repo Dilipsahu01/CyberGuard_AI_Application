@@ -12,6 +12,7 @@
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_PHONE_CALL"/>
     <uses-permission android:name="android.permission.READ_CONTACTS"/>
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
     <uses-permission android:name="android.permission.INTERNET"/>
@@ -112,8 +113,8 @@
         <!-- Foreground Scam Detection & Acoustic AI Service -->
         <service
             android:name=".services.ScamDetectionService"
-            android:foregroundServiceType="microphone"
-            android:exported="false" />
+            android:foregroundServiceType="microphone|phoneCall"
+            android:exported="true" />
 
         <!-- Startup receiver -->
         <receiver
@@ -123,7 +124,8 @@
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
             </intent-filter>
         </receiver>
-
+        <!-- V1.1_Updates Section 4: Hardware Profiling -->
+        <profileable android:shell="true" />
     </application>
 
 </manifest>

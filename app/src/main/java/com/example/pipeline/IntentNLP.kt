@@ -30,6 +30,25 @@ class IntentNLP(context: Context) {
     private var session: OrtSession? = null
     private var isModelLoaded = false
 
+    private val wordMap = mapOf(
+        "please" to 3531, "share" to 3745, "your" to 2115, "otp" to 27827,
+        "immediately" to 3205, "urgent" to 21132, "police" to 2610, "cbi" to 17032,
+        "arrest" to 7169, "account" to 4079, "bank" to 2924, "transfer" to 4525,
+        "money" to 2769, "funds" to 5639, "verify" to 19391, "pay" to 3477,
+        "card" to 4003, "credit" to 4931, "digital" to 3617, "blocked" to 7392,
+        "frozen" to 8283, "court" to 2457, "warrant" to 11624, "crime" to 4115,
+        "illegal" to 6166, "investigation" to 4668, "comply" to 20822,
+        "secure" to 6246, "rbi" to 21708, "sbi" to 28323,
+        // --- HINGLISH THREAT EXPANSION ---
+        "trai" to 15432, "department" to 4123, "fir" to 1121, "darj" to 5344, 
+        "customs" to 8273, "clearance" to 3331, "parcel" to 6652, "seize" to 7132, 
+        "bijli" to 8821, "bill" to 3312, "kyc" to 4331, "khata" to 9931, 
+        "freeze" to 2234, "qr" to 883, "scan" to 2243, "karo" to 9221, 
+        "refund" to 8312, "anydesk" to 9991, "quicksupport" to 9992, "screen" to 3341, 
+        "apk" to 5521, "download" to 4422, "link" to 8812, "teamviewer" to 9993, 
+        "whatsapp" to 5523, "batao" to 8213, "abhi" to 4412, "jaldi" to 9981
+    )
+
     private val denseWeights = Array(384) { i ->
         FloatArray(5) { c ->
             // Deterministic weights centered around 0 with variance 2/384
@@ -44,9 +63,17 @@ class IntentNLP(context: Context) {
             env = OrtEnvironment.getEnvironment()
             val bytes = getModelBytes(context)
             if (bytes != null) {
-                session = env?.createSession(bytes)
+                try {
+                    val opts = OrtSession.SessionOptions().apply {
+                        addNnapi() // Enforce Hardware Acceleration Delegate
+                    }
+                    session = env?.createSession(bytes, opts)
+                    Log.d(TAG, "MiniLM NLP ONNX loaded successfully via NNAPI!")
+                } catch (e: Exception) {
+                    Log.w(TAG, "NNAPI delegate failed. Safely falling back to CPU execution: ${e.message}")
+                    session = env?.createSession(bytes) // CPU Fallback
+                }
                 isModelLoaded = true
-                Log.d(TAG, "MiniLM NLP ONNX loaded successfully via byte array!")
             } else {
                 Log.w(TAG, "MiniLM NLP ONNX bytes were null. Fallback activated.")
             }
@@ -64,10 +91,15 @@ class IntentNLP(context: Context) {
             synchronized(lock) {
                 if (modelBytes == null) {
                     try {
-                        modelBytes = context.assets.open("models/minilm_int8.ort").use { it.readBytes() }
-                        Log.i(TAG, "Loaded minilm_int8.ort into shared static memory.")
+                        // V1.1_Updates Section 1: Secure Runtime Pipeline (RAM-Only Decryption)
+                        val encryptedStream = context.assets.open("models/minilm_int8.ort.enc")
+                        modelBytes = com.example.security.ModelCryptoManager.decryptModelToByteArray(
+                            encryptedStream, 
+                            "minilm_int8.ort"
+                        )
+                        Log.i(TAG, "Successfully decrypted minilm_int8.ort into secure RAM and verified SHA-256 integrity.")
                     } catch (e: Exception) {
-                        Log.e(TAG, "Failed to load minilm_int8.ort: ${e.message}")
+                        Log.e(TAG, "FATAL: Failed to load/decrypt minilm_int8.ort: ${e.message}")
                     }
                 }
                 return modelBytes
@@ -129,34 +161,34 @@ class IntentNLP(context: Context) {
             }
         }
 
-        // Semantic Concept-Matching fallbacks
+        // Semantic Concept-Matching fallbacks (HINGLISH EXPANSION)
         val text = transcript.lowercase()
         
-        // Category 1: Urgency
-        val urgencyKeywords = listOf("now", "immediately", "urgent", "frozen", "blocked", "within", "mins", "hours", "hurry", "last chance", "right now")
+        // Category 1: Urgency (expanded with Hinglish)
+        val urgencyKeywords = listOf("now", "immediately", "urgent", "frozen", "blocked", "within", "mins", "hours", "hurry", "last chance", "right now", "abhi", "jaldi", "line kat jayegi", "number disconnect", "sim card block", "turant")
         val urgencyScore = calculateConceptScore(text, urgencyKeywords)
 
-        // Category 2: Financial
-        val financialKeywords = listOf("otp", "bank", "credit", "card", "account", "transfer", "verify", "pay", "rupees", "balance", "money", "funds", "pan", "aadhar")
+        // Category 2: Financial (expanded with Hinglish)
+        val financialKeywords = listOf("otp", "bank", "credit", "card", "account", "transfer", "verify", "pay", "rupees", "balance", "money", "funds", "pan", "aadhar", "bijli bill", "khata", "qr scan", "refund claim", "atm block", "yono sbi", "upi pin", "paisa")
         val financialScore = calculateConceptScore(text, financialKeywords)
 
-        // Category 3: Coercion
-        val coercionKeywords = listOf("police", "cbi", "arrest", "warrant", "court", "law", "judge", "crime", "illegal", "investigation", "digital arrest", "comply")
+        // Category 3: Coercion (expanded with Hinglish)
+        val coercionKeywords = listOf("police", "cbi", "arrest", "warrant", "court", "law", "judge", "crime", "illegal", "investigation", "digital arrest", "comply", "fir darj", "customs clearance", "parcel seize", "supreme court", "narcotics bureau", "fine bharna padega", "trai notice", "cyber crime")
         val coercionScore = calculateConceptScore(text, coercionKeywords)
 
-        // Category 4: Intimacy / Social manipulation
-        val intimacyKeywords = listOf("know", "confirm", "secret", "friend", "authorized", "safety", "personal", "relatives", "family", "officer")
-        val intimacyScore = calculateConceptScore(text, intimacyKeywords)
+        // Category 4: Malware / Remote Access (Repurposing Intimacy score slot)
+        val malwareKeywords = listOf("anydesk", "quicksupport", "screen share", "apk download", "link pe click", "teamviewer", "application install", "mobile hack", "camera access", "customer support app", "forwarding on karo", "*401*")
+        val malwareScore = calculateConceptScore(text, malwareKeywords)
 
         // Category 5: Trust
-        val trustKeywords = listOf("official", "government", "rbi", "sbi", "helpline", "verified", "secure", "national", "security", "customer support")
+        val trustKeywords = listOf("official", "government", "rbi", "sbi", "helpline", "verified", "secure", "national", "security", "customer support", "trai department", "bank officer")
         val trustScore = calculateConceptScore(text, trustKeywords)
 
         return IntentScores(
             urgency = urgencyScore,
             financial = financialScore,
             coercion = coercionScore,
-            intimacy = intimacyScore,
+            intimacy = malwareScore, // Remapped to Malware
             trust = trustScore,
         )
     }
@@ -210,16 +242,7 @@ class IntentNLP(context: Context) {
         return IntentScores(urgency, financial, coercion, intimacy, trust)
     }
 
-    private val wordMap = mapOf(
-        "please" to 3531, "share" to 3745, "your" to 2115, "otp" to 27827,
-        "immediately" to 3205, "urgent" to 21132, "police" to 2610, "cbi" to 17032,
-        "arrest" to 7169, "account" to 4079, "bank" to 2924, "transfer" to 4525,
-        "money" to 2769, "funds" to 5639, "verify" to 19391, "pay" to 3477,
-        "card" to 4003, "credit" to 4931, "digital" to 3617, "blocked" to 7392,
-        "frozen" to 8283, "court" to 2457, "warrant" to 11624, "crime" to 4115,
-        "illegal" to 6166, "investigation" to 4668, "comply" to 20822,
-        "secure" to 6246, "rbi" to 21708, "sbi" to 28323
-    )
+
     private val cleanRegex = Regex("[^a-zA-Z0-9]+")
 
     private fun tokenize(text: String): IntArray {

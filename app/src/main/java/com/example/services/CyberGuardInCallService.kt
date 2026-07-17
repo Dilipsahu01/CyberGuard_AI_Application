@@ -115,10 +115,10 @@ class CyberGuardInCallService : InCallService() {
             putExtra(Constants.EXTRA_CALLER_NUMBER, number)
             putExtra("is_scam_scenario", false)
         }
-        if (true) {
-            startForegroundService(intent)
-        } else {
+        try {
             startService(intent)
+        } catch (e: Exception) {
+            Log.e(tag, "Failed to start ScamDetectionService: ${e.message}")
         }
     }
 

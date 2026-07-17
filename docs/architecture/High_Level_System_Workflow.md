@@ -42,31 +42,31 @@ graph TD
 3. **Power Gating**: The service acquires a partial `PowerManager.WakeLock` with a 10-minute timeout to prevent CPU sleep during active call states.
 4. **Main-Thread Protection**: Instead of loading models in `onCreate()`, `onStartCommand()` launches a background coroutine on `Dispatchers.IO` to instantiate `PipelineManager(this)`.
 
-### **Stage 2: Asynchronous Model Loading**
-1. **Model buffer caching**: `PipelineManager` invokes static model loading helpers inside `SileroVAD.kt` (`getModelBuffer()`) and `IntentNLP.kt` (`getModelBuffer()`).
-2. **Direct Mapping**: The assets are mapped exactly once via `fileChannel.map(FileChannel.MapMode.READ_ONLY, ...)` into shared static `MappedByteBuffer` references inside companion objects.
-3. **Session Allocation**: ONNX Runtime sessions are instantiated using `env.createSession(buffer)`.
-4. **Ready State**: Once loaded, `pipelineManager` is assigned, allowing the recording thread to safely begin inference.
+### **Stage 2: Asynchronous Model Loading & Decryption (The Vault)**
+1. **Hardware Keystore Lock**: `PipelineManager` invokes `ModelCryptoManager.kt` to retrieve the master AES-256 decryption key dynamically generated and locked inside the Android Hardware Keystore (TEE) via `libcyberguard_secrets.so`.
+2. **RAM-Only Decryption**: The encrypted `.enc` AI models (Silero VAD & MiniLM) are sequentially decrypted via an `InputStream` directly into volatile `MappedByteBuffer` allocations, completely bypassing disk storage to prevent Root extraction.
+3. **Integrity Verification**: `ModelIntegrityVerifier.kt` hashes the decrypted RAM bytes and compares them against signed SHA-256 baselines. If the hashes mismatch (indicating poisoning/tampering), the service intentionally crashes via `EnvironmentGuard`.
+4. **Ready State**: Once loaded and verified, `pipelineManager` assigns the ONNX Runtime sessions, allowing the recording thread to safely begin inference.
 
-### **Stage 3: Real-Time Audio Capture & Normalization**
-1. **Hardware Recording**: The `recordThread` runs on a native priority of `THREAD_PRIORITY_AUDIO` (priority value 8). It instantiates `AudioRecord` at 16000Hz in Mono using `MediaRecorder.AudioSource.VOICE_RECOGNITION`.
-2. **Microphone Intercept**: Every 100 milliseconds, the thread reads PCM data:
-   * `audioRecord.read(audioBuffer, 0, 1600)` returns `readSize`.
-3. **Float Transformation**: The raw 16-bit short PCM values are passed to `AudioUtils.shortToFloat(audioBuffer, floatArray, readSize)`. Values are scaled from range `[-32768, 32767]` down to floats in range `[-1.0f, 1.0f]`.
-4. **Array Slicing**: If `readSize < 1600`, the buffer is dynamically sliced using `floatArray.copyOfRange(0, readSize)` to prevent trailing clicks or silence contamination.
+### **Stage 3: Real-Time Audio Capture & Zero-Allocation Object Pool**
+1. **Zero-Allocation Buffering**: To completely eliminate Garbage Collection (GC) thrashing and CPU thermal spikes, the recording loop utilizes a `ConcurrentLinkedQueue` as a pre-allocated object pool. Audio buffers are endlessly recycled via a non-blocking Producer-Consumer coroutine channel.
+2. **Hardware Recording**: The `recordThread` runs on a native priority of `THREAD_PRIORITY_AUDIO` (priority value 8). It instantiates `AudioRecord` at 16000Hz in Mono using `MediaRecorder.AudioSource.VOICE_RECOGNITION`.
+3. **Microphone Intercept**: Every 100 milliseconds, the thread reads PCM data from the microphone.
+4. **Float Transformation**: Raw 16-bit short PCM values are fetched from the object pool, passed to `AudioUtils.shortToFloat`, and scaled from `[-32768, 32767]` down to floats in range `[-1.0f, 1.0f]` without instantiating new primitive arrays.
 
-### **Stage 4: Multi-Stage AI Inference (PipelineManager)**
+### **Stage 4: Multi-Stage AI Inference & ADPF Cascading Gate (PipelineManager)**
 1. **Voice Activity Detection**: The float array is passed to `SileroVAD.isSpeech()`. 
    * If speech probability exceeds `0.5f`, `speechActive` turns `true`.
 2. **Acoustic Deepfake Check**: Audio is piped into a `detectRoboVoice()` stub for synthetic voice artifact checking.
 3. **Speech-to-Text Recognition**: The audio chunk is passed to `StreamingASR.processChunk(activeAudioChunk)` to update the live conversation transcript using a Hinglish model.
-4. **Slow-Burn Tracking**: The new transcript delta is pushed to `ArcTracker.update()` to map the conversational phase (e.g. `TRUST_BUILD`).
-5. **Sliding Window Optimization**: Before NLP analysis, the transcript is passed to `getLastNWords(100)` inside `PipelineManager.kt` to extract the most recent 100 words, protecting the NLP model from token overflow.
-4. **Semantic Classification**: The windowed text is sent to `IntentNLP.analyze(transcript)` every 5 audio chunks (~500ms):
-   * Text is tokenized to an integer token array.
-   * MiniLM-L6 maps tokens to a 384-dimensional embedding vector.
-   * **Dense Projection Matrix**: A deterministic $384 \times 5$ weights projection calculates logits for the 5 threat vectors: `Financial`, `Urgency`, `Coercion`, `Intimacy`, and `Trust`.
-5. **Pattern Checking**: Concurrently, the text is fed into `RegexGate.check(transcript)`. Matching regex patterns (e.g., OTP, Digital Arrest, CBI) are recorded and synchronized using `synchronized(this)` locks to prevent concurrent modification crashes.
+4. **Cascading Gate Logic (Battery & Thermal Protection)**: Before running the heavy ONNX LLM, `PipelineManager.kt` enforces three strict constraints:
+   * **VAD Utterance Gate:** The LLM only fires when `utteranceEnded == true` (saving NPU compute mid-sentence).
+   * **Fast-Talker Exploit Fix:** The LLM forcefully wakes up every 5 conversational turns if a scammer refuses to stop talking, ensuring unbroken context.
+   * **ADPF Thermal Routing:** The system polls `PowerManager.getThermalHeadroom()`. If the device hits 85% thermal capacity, it dynamically skips the ONNX NLP execution and falls back to a zero-compute Regex gate to prevent OS throttling.
+5. **Semantic Classification (Hardware Delegation)**: When permitted by the ADPF gate, the sliding window text is sent to `IntentNLP.analyze()`:
+   * ONNX Runtime explicitly routes tensor ops through Android's **NNAPI** delegate for native NPU/GPU hardware acceleration.
+   * MiniLM-L6 maps tokens to a 384-dimensional embedding vector, outputting logits for 5 modern threat vectors: `Financial`, `Urgency`, `Coercion`, `Malware`, and `Trust`.
+6. **Pattern Checking**: Concurrently, the text is fed into `RegexGate.check(transcript)`. Matching regex patterns (e.g., OTP, Digital Arrest, CBI) are recorded and synchronized using `synchronized(this)` locks to prevent concurrent modification crashes.
 
 ### **Stage 5: Scoring Fusion & UI State Updates**
 1. **Ensemble Scoring**: `EnsembleEngine.calculate()` fuses semantic logits, regex weights, ArcTracker state, and Pig-Butchering Contact Memory:

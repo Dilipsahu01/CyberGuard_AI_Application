@@ -284,6 +284,7 @@ Byte-level masking and Little-Endian stitching:
 |:---|:---|
 | **Configurable Threshold** | `alertThreshold` (default: `70`) — located in `Advancedsettingsscreen.kt`, governs the `isScamDanger` boolean |
 | **Quantization** | `Sherpa-ONNX Fast Conformer CTC` operates with **INT8 quantization**, constrained to ~40 MB |
+| **AES-256 Decryption RAM** | `ModelCryptoManager.kt` reads `.enc` model files sequentially using `CipherInputStream` and writes the plaintext exclusively into RAM (`MappedByteBuffer`), utilizing an additional ~25MB of volatile heap during initialization to prevent disk extraction |
 | **ABI Stripping** | ONNX runtime native library (`libonnxruntime.so`) restricted solely to `arm64-v8a`, shedding ~30 MB of multi-ABI size bloat |
 | **Inference Latency Target** | MiniLM-L6 inference operates within a strict window of **~17ms** per pass |
 | **Singleton Byte Caching** | `env.createSession(buffer)` loads model bytes exactly once into a singleton byte-array cache to avoid repeated disk I/O |

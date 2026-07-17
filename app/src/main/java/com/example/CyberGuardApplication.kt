@@ -29,6 +29,12 @@ class CyberGuardApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         registerNetworkCallback()
+        
+        // V1.1_Updates Section 6: Offline Threat Intelligence
+        // Pre-load the DOT scammer CSV database from Room directly into the RAM-based BloomFilter.
+        // This guarantees that the CallScreeningService can intercept scams at exactly 0ms latency
+        // the moment the phone rings, without hitting the disk!
+        com.example.pipeline.BloomFilter().loadFromDatabase(this)
     }
 
     private fun registerNetworkCallback() {

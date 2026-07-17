@@ -22,6 +22,9 @@ import androidx.compose.material.icons.filled.MicOff
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.filled.Dialpad
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -63,6 +66,12 @@ fun ActiveCallScreen(
     var showCaptions by rememberSaveable { mutableStateOf(false) }
     var showNotes by rememberSaveable { mutableStateOf(false) }
     var notesText by rememberSaveable { mutableStateOf("") }
+    
+    // States for 6-Button Dialer Grid
+    var isMuted by rememberSaveable { mutableStateOf(false) }
+    var isSpeakerOn by rememberSaveable { mutableStateOf(false) }
+    var isOnHold by rememberSaveable { mutableStateOf(false) }
+    var showKeypad by rememberSaveable { mutableStateOf(false) }
 
     Surface(color = Color.White, modifier = Modifier.fillMaxSize()) {
         Column(
@@ -83,7 +92,22 @@ fun ActiveCallScreen(
                 Text(text = callDuration, color = Gray500, fontSize = 13.sp, fontWeight = FontWeight.Medium)
             }
             Spacer(Modifier.height(8.dp))
-            Text(text = "Recording for AI Analysis", color = Primary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                // Pulsing/status indicator dot
+                Box(
+                    modifier = Modifier
+                        .size(8.dp)
+                        .clip(CircleShape)
+                        .background(if (isScamDetected) AlertRedBorder else Color(0xFF10B981))
+                )
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    text = if (isScamDetected) "AI Fraud Sequence Identified" else "AI Active Scanning: Regex + NLP", 
+                    color = if (isScamDetected) AlertRedBorder else Primary, 
+                    fontSize = 12.sp, 
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
 
             if (isScamDetected) {
                 Spacer(Modifier.height(32.dp))
@@ -161,14 +185,24 @@ fun ActiveCallScreen(
                 
                 Spacer(Modifier.height(32.dp))
 
-                // ---- Basic Call Controls ----
-                Row(
-                    modifier = Modifier.width(260.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    CallControlButton(Icons.Filled.Bluetooth, "Bluetooth")
-                    CallControlButton(Icons.Filled.MicOff, "Mute")
-                    CallControlButton(Icons.Filled.VolumeUp, "Speaker")
+                // ---- Standard 6-Button Dialer Grid ----
+                Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    Row(
+                        modifier = Modifier.width(280.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        CallControlButton(Icons.Filled.MicOff, "Mute", isActive = isMuted) { isMuted = !isMuted }
+                        CallControlButton(Icons.Filled.Dialpad, "Keypad", isActive = showKeypad) { showKeypad = !showKeypad }
+                        CallControlButton(Icons.Filled.VolumeUp, "Speaker", isActive = isSpeakerOn) { isSpeakerOn = !isSpeakerOn }
+                    }
+                    Row(
+                        modifier = Modifier.width(280.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        CallControlButton(Icons.Filled.Add, "Add Call", isActive = false) { /* TelecomManager Add Call logic */ }
+                        CallControlButton(Icons.Filled.Pause, "Hold", isActive = isOnHold) { isOnHold = !isOnHold }
+                        CallControlButton(Icons.Filled.Bluetooth, "Bluetooth", isActive = false) { /* Audio Route selector */ }
+                    }
                 }
                 
                 Spacer(Modifier.height(24.dp))
@@ -277,20 +311,23 @@ fun ActiveCallScreen(
 }
 
 @Composable
-private fun CallControlButton(icon: ImageVector, label: String) {
+private fun CallControlButton(icon: ImageVector, label: String, isActive: Boolean = false, onClick: () -> Unit = {}) {
+    val bgColor = if (isActive) Color(0xFFD1E4FF) else Gray50
+    val tintColor = if (isActive) Color(0xFF004B71) else Gray700
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Box(
             modifier = Modifier
                 .size(60.dp)
                 .clip(CircleShape)
-                .background(Gray50)
-                .border(width = 1.dp, color = BorderGray, shape = CircleShape),
+                .background(bgColor)
+                .border(width = 1.dp, color = if (isActive) Color(0xFF004B71) else BorderGray, shape = CircleShape)
+                .clickable(onClick = onClick),
             contentAlignment = Alignment.Center
         ) {
-            Icon(imageVector = icon, contentDescription = label, tint = Gray700, modifier = Modifier.size(24.dp))
+            Icon(imageVector = icon, contentDescription = label, tint = tintColor, modifier = Modifier.size(24.dp))
         }
         Spacer(Modifier.height(8.dp))
-        Text(text = label, color = Gray700, fontSize = 14.sp)
+        Text(text = label, color = tintColor, fontSize = 14.sp)
     }
 }
 
@@ -298,6 +335,7 @@ private fun CallControlButton(icon: ImageVector, label: String) {
 private fun ToolTogglePill(icon: ImageVector, label: String, isActive: Boolean, onClick: () -> Unit) {
     Row(
         modifier = Modifier
+            .defaultMinSize(minHeight = 48.dp) // Ensure minimum touch target size
             .clip(CircleShape)
             .background(if (isActive) Primary else Color.White)
             .border(1.dp, if (isActive) Primary else BorderGray, CircleShape)

@@ -43,7 +43,9 @@ We successfully cleared the **National level presentations (TEC)** held from May
 
 ## Project Overview
 
-**CyberGuard AI** is a next-generation telecom security ecosystem designed to detect, mitigate, and report telecom scams, spam, and malicious intent in real-time using on-device Machine Learning. 
+**CyberGuard AI** is a next-generation telecom security ecosystem designed to detect, mitigate, and report telecom scams, spam, and malicious intent in real-time using **100% Offline, Privacy-First Edge AI**. 
+
+Engineered with **Dynamic Thermal Edge Routing**, the architecture seamlessly manages ONNX LLM neural networking on active voice calls without overheating, making it perfectly suited for extreme environments and prolonged network stress tests.
 
 *To maintain the integrity of our intellectual property ahead of the final national evaluation, specific technical implementation details, proprietary algorithms, and architectural specifics have been intentionally omitted from this public document.*
 
@@ -51,10 +53,14 @@ We successfully cleared the **National level presentations (TEC)** held from May
 
 | Capability | Description |
 |:---|:---|
-| **Real-time Threat Detection** | Advanced Edge AI analysis of telecom interactions to prevent fraud before it happens. |
-| **Edge-to-Cloud Integration** | Seamless, encrypted communication between user devices and our secure Swarm backend. |
+| **100% Offline Privacy** | Zero personally identifiable information (PII) leaves the device in plaintext. All intent evaluation is securely computed entirely on-device, bypassing "Data Sharing" compliance risks. |
+| **Dynamic Thermal Edge Routing** | Integrates with the Android Dynamic Performance Framework (ADPF) to automatically route traffic between the heavy ONNX NLP and a zero-compute Regex gate, preventing device thermal throttling (>85% capacity). |
+| **Hinglish Threat Intelligence** | Optimized for the modern Indian cyber landscape. Specifically tuned to intercept "Digital Arrests," FedEx Customs seizures, Electricity Bill APK scams, and TRAI impersonation using an expanded Regex Dictionary and Semantic Concept Matching. |
+| **Edge-to-Cloud Integration** | Seamless, encrypted communication between user devices and our secure Swarm backend via UDP 5G URLLC telemetry. |
 | **Network Resiliency** | Innovative fallback protocols designed for degraded 5G and Non-Terrestrial Network (NTN) environments. |
-| **Privacy-First Processing** | Zero personally identifiable information (PII) leaves the device in plaintext. All intent evaluation is securely computed on-device. |
+| **Hardware Encryption (V1.1)** | AI Models are AES-256 encrypted at rest and decrypted dynamically into volatile RAM via Android Hardware Keystore to prevent theft on rooted devices. |
+| **Zero-Allocation Profiling (V1.1)** | Utilizes a strict Producer-Consumer Coroutine Channel and a `ConcurrentLinkedQueue` object pool to completely eliminate Garbage Collection thrashing and thermal spikes during audio capture. |
+| **Offline Threat Intel (V1.1)** | 10,000+ known threat vectors loaded into a C++ optimized BloomFilter on startup, enabling instantaneous caller rejection without waking up the ML models or requesting cloud APIs. |
 
 ---
 

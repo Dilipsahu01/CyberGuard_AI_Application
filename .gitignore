@@ -52,6 +52,9 @@ GoogleService-Info.plist
 *.bin
 *.pt
 *.pth
+*.enc
+tmp_aar/
+macrobenchmark/
 app/libs/
 
 # ── Python (pipeline_demo & tooling) ─────────────────────────────────────────

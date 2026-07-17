@@ -32,10 +32,18 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlin.system.exitProcess
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import android.content.Context
+import android.app.role.RoleManager
+import android.os.Build
+import androidx.compose.ui.platform.LocalContext
+import android.Manifest
 
 @Composable
 fun PermissionsOnboardingScreen(
-    onGrantPermissions: () -> Unit = {}
+    onGrantPermissions: () -> Unit = {},
+    onSkip: () -> Unit = {}
 ) {
     var hasAcceptedDisclosure by remember { mutableStateOf(false) }
 
@@ -46,7 +54,7 @@ fun PermissionsOnboardingScreen(
                 onDecline = { exitProcess(0) }
             )
         } else {
-            SystemPermissionsScreen(onGrantPermissions)
+            SystemPermissionsScreen(onGrantPermissions, onSkip)
         }
     }
 }
@@ -164,8 +172,40 @@ private fun DisclosureItem(title: String, description: String) {
 }
 
 @Composable
-private fun SystemPermissionsScreen(onGrantPermissions: () -> Unit) {
+private fun SystemPermissionsScreen(onGrantPermissions: () -> Unit, onSkip: () -> Unit = {}) {
     val scrollState = rememberScrollState()
+    val context = LocalContext.current
+
+    val dialerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) {
+        onGrantPermissions()
+    }
+
+    val callScreenerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val roleManager = context.getSystemService(Context.ROLE_SERVICE) as RoleManager
+            val intent = roleManager.createRequestRoleIntent(RoleManager.ROLE_DIALER)
+            dialerLauncher.launch(intent)
+        } else {
+            onGrantPermissions()
+        }
+    }
+
+    val standardPermissionsLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) { _ ->
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val roleManager = context.getSystemService(Context.ROLE_SERVICE) as RoleManager
+            val intent = roleManager.createRequestRoleIntent(RoleManager.ROLE_CALL_SCREENING)
+            callScreenerLauncher.launch(intent)
+        } else {
+            onGrantPermissions()
+        }
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -219,14 +259,28 @@ private fun SystemPermissionsScreen(onGrantPermissions: () -> Unit) {
         Spacer(Modifier.height(32.dp))
 
         Button(
-            onClick = onGrantPermissions,
+            onClick = {
+                standardPermissionsLauncher.launch(
+                    arrayOf(
+                        Manifest.permission.RECORD_AUDIO,
+                        Manifest.permission.READ_CALL_LOG,
+                        Manifest.permission.READ_CONTACTS
+                    )
+                )
+            },
             modifier = Modifier
                 .fillMaxWidth()
                 .height(56.dp),
             colors = ButtonDefaults.buttonColors(containerColor = Primary),
             shape = RoundedCornerShape(14.dp)
         ) {
-            Text("Grant System Permissions", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
+            Text("Start Granting Permissions", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
+        }
+        
+        Spacer(Modifier.height(12.dp))
+        
+        TextButton(onClick = onSkip) {
+            Text("Bypass Onboarding (Dev Mode)", color = Gray500, fontWeight = FontWeight.Medium)
         }
     }
 }

@@ -18,6 +18,8 @@ This document contains a comprehensive list of all the essential Gradle commands
 | `./gradlew testDebugUnitTest` | Runs all local Unit Tests (Robolectric, MockK, Coroutines) using your computer's JVM. |
 | `./gradlew connectedAndroidTest` | Runs all Instrumented UI Tests (Jetpack Compose) on a connected physical device or emulator. |
 | `./gradlew testDebugUnitTest --tests "*SosBypassChaosTest"` | Runs a specific test class instead of the entire suite (wildcards accepted). |
+| `./gradlew :app:testDebugUnitTest --tests "*SecurityTests*"` | **[V1.1]** Runs the specialized Hardware Keystore & Cryptography unit tests. |
+| `./gradlew :macrobenchmark:connectedAndroidTest` | **[V1.1]** Runs the Macrobenchmark hardware profiler to generate `.perfetto-trace` files for startup latency and UI jank analysis. *(Requires a physical device).* |
 | `./gradlew connectedAndroidTest --rerun-tasks` | Forces all instrumented tests to run from scratch, bypassing previously cached test results. |
 
 ## Cache Management & Memory Rescue

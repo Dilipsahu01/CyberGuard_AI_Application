@@ -7,6 +7,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.provider.Settings
+import android.util.Log
 import androidx.core.content.ContextCompat
 import androidx.compose.runtime.*
 import androidx.lifecycle.AndroidViewModel
@@ -95,12 +96,12 @@ class PipelineViewModel(
 
         val intent = Intent(context, ScamDetectionService::class.java).apply {
             putExtra(Constants.EXTRA_CALLER_NUMBER, simulatedNumber)
-            putExtra("is_scam_scenario", isScam)
+            putExtra("is_scam_scenario", true) // ALWAYS true for mock calls to bypass MIC check
         }
-        if (true) {
-            context.startForegroundService(intent)
-        } else {
+        try {
             context.startService(intent)
+        } catch (e: Exception) {
+            Log.e("PipelineViewModel", "Failed to start ScamDetectionService: ${e.message}")
         }
     }
 

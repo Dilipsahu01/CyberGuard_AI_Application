@@ -36,10 +36,12 @@ graph TD
     O --> P{Speech Probability > 0.5f?}
     P -->|No / Silence >= 4 chunks| Q[Flag: speechActive = false<br/>Skip ASR / Save Battery]:::safeGreen
     
-    %% Stage 4: Inference
+    %% Stage 4: Inference (V1.1 Crypto Encrypted)
     P -->|Yes| R[Flag: speechActive = true]
-    R --> S[Sherpa-ONNX ASR<br/>Local Transcriber]:::aiEngine
-    S --> T[StateFlow: _transcriptFlow]
+    R --> S[Android Hardware Keystore<br/>AES-256 Decryption into RAM]:::hardware
+    S --> SA[ModelIntegrityVerifier<br/>SHA-256 Validation]:::hardware
+    SA --> SB[Sherpa-ONNX ASR<br/>Local Transcriber]:::aiEngine
+    SB --> T[StateFlow: _transcriptFlow]
     
     T --> U{Dual Inference Engine}
     
@@ -49,7 +51,7 @@ graph TD
     
     %% Stage 4.2: Probabilistic
     U --> X[MiniLM-L6 NLP Engine<br/>100-word sliding window]:::aiEngine
-    X --> Y[Outputs 5 Logits 0-127:<br/>Fin, Urg, Coe, Int, Tru]:::bitPacking
+    X --> Y[Outputs 5 Logits 0-127:<br/>Fin, Urg, Coe, Mal, Tru]:::bitPacking
     
     %% Pig Butchering
     I -->|True| J[Bypass AI Pipeline<br/>Save Battery/CPU]:::safeGreen

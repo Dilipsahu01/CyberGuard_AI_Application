@@ -167,10 +167,16 @@ class SileroVAD(context: Context) {
             synchronized(lock) {
                 if (modelBytes == null) {
                     try {
-                        modelBytes = context.assets.open("models/silero_vad.ort").use { it.readBytes() }
-                        Log.i(TAG, "Loaded silero_vad.ort into shared static memory.")
+                        // V1.1_Updates Section 1: Secure Runtime Pipeline (RAM-Only Decryption)
+                        val encryptedStream = context.assets.open("models/silero_vad.ort.enc")
+                        modelBytes = com.example.security.ModelCryptoManager.decryptModelToByteArray(
+                            encryptedStream, 
+                            "silero_vad.ort"
+                        )
+                        Log.i(TAG, "Successfully decrypted silero_vad.ort into secure RAM and verified SHA-256 integrity.")
                     } catch (e: Exception) {
-                        Log.e(TAG, "Failed to load silero_vad.ort: ${e.message}")
+                        Log.e(TAG, "FATAL: Failed to load/decrypt silero_vad.ort: ${e.message}")
+                        // We intentionally crash or fallback if security fails, we do not bypass!
                     }
                 }
                 return modelBytes

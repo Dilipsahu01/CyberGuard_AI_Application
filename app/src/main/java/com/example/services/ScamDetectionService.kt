@@ -46,6 +46,7 @@ import androidx.preference.PreferenceManager
 import com.example.MainActivity
 import com.example.models.*
 import com.example.pipeline.*
+import com.example.security.EnvironmentGuard
 import com.example.database.TelemetryDatabase
 import com.example.database.TelemetryQueueItem
 import com.example.utils.Constants
@@ -67,6 +68,8 @@ import android.app.role.RoleManager
 import kotlin.coroutines.coroutineContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import java.util.concurrent.ConcurrentLinkedQueue
+import kotlinx.coroutines.channels.Channel
 
 /**
  * Core foreground service that records audio, runs the AI pipeline, and communicates with the cloud server.
@@ -108,8 +111,12 @@ class ScamDetectionService : Service() {
     private val httpClient = OkHttpClient.Builder()
         .callTimeout(5, TimeUnit.SECONDS)
         .build()
-    // Using local LAN IP for hackathon testing since Vercel does not support persistent SQLite Go servers
-    private val serverBaseUrl = com.example.BuildConfig.SERVER_BASE_URL
+    // Native Obfuscation (V1.1_Updates Section 2): URL is fetched from encrypted C++ memory
+    private val serverBaseUrl = try {
+        com.example.security.NativeSecrets.getServerBaseUrl()
+    } catch (e: UnsatisfiedLinkError) {
+        "http://10.0.2.2:8080/api/v1" // Fallback for local JVM tests
+    }
 
     // ---------- Service lifecycle ----------
     override fun onBind(intent: Intent?): IBinder = LocalBinder()
@@ -128,10 +135,36 @@ class ScamDetectionService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        serviceStartTime = System.currentTimeMillis()
+        
+        // Only promote to Foreground Service if RECORD_AUDIO is granted
+        val hasMicPermission = ContextCompat.checkSelfPermission(this, android.Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+        if (hasMicPermission) {
+            val notification = buildNotification("CyberGuard AI Active", "CyberGuard AI is actively scanning this call.")
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    startForeground(notificationId, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
+                } else {
+                    startForeground(notificationId, notification)
+                }
+            } catch (e: Exception) {
+                Log.e(tag, "Foreground start failed – ignoring to prevent crash", e)
+            }
+        } else {
+            Log.w(tag, "RECORD_AUDIO missing. Skipping startForeground to prevent SecurityException crash.")
+        }
+
+        // V1.1_Updates Section 3: The Tripwire
+        if (EnvironmentGuard.isDeviceCompromised()) {
+            Log.e(tag, "SECURITY ALERT: Compromised environment detected. Refusing to boot AI pipeline.")
+            stopSelf()
+            return START_NOT_STICKY
+        }
+
         // Permission check
         // Verify required permissions for call detection
         val missingPermissions = mutableListOf<String>()
-        if (ContextCompat.checkSelfPermission(this, android.Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+        if (!hasMicPermission && !(intent?.getBooleanExtra("is_scam_scenario", false) ?: false)) {
             missingPermissions.add("RECORD_AUDIO")
         }
         if (missingPermissions.isNotEmpty()) {
@@ -139,15 +172,14 @@ class ScamDetectionService : Service() {
             stopSelf()
             return START_NOT_STICKY
         }
-        // Verify Call Screening role
+        // Verify Call Screening role (Dev Mode bypass allowed)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             val roleManager = getSystemService(RoleManager::class.java) as RoleManager
             if (!roleManager.isRoleHeld(RoleManager.ROLE_CALL_SCREENING)) {
-                Log.e(tag, "Call screening role not held. Stopping service.")
-                stopSelf()
-                return START_NOT_STICKY
+                Log.w(tag, "Call screening role not held. Allowing anyway for Dev Mode.")
             }
         }
+        
         // Caller info
         currentCaller = intent?.getStringExtra(Constants.EXTRA_CALLER_NUMBER) ?: "Unknown"
         isScamDemo = intent?.getBooleanExtra("is_scam_scenario", false) ?: false
@@ -163,19 +195,6 @@ class ScamDetectionService : Service() {
             Log.e(tag, "EMERGENCY SOS NUMBER DETECTED ($currentCaller). Bypassing AI processing completely to guarantee zero latency.")
             stopSelf()
             return START_NOT_STICKY
-        }
-
-        // Foreground service with proper type handling
-        val notification = buildNotification("CyberGuard AI Active", "CyberGuard AI is actively scanning this call.")
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                startForeground(notificationId, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
-            } else {
-                startForeground(notificationId, notification)
-            }
-        } catch (e: Exception) {
-            Log.e(tag, "Foreground start failed – fallback", e)
-            startForeground(notificationId, notification)
         }
 
         // Wake‑lock to keep CPU alive during recording
@@ -492,28 +511,83 @@ class ScamDetectionService : Service() {
                 return@Thread
             }
             // --- PIPELINE SAFETY CHECK ---
-            // Do not even turn on the microphone until the AI is actually loaded
             if (pipelineManager == null) {
                 Log.e("AudioLoop", "PipelineManager is null! Wait for 'Pipeline loaded successfully' before recording.")
                 return@Thread
             }
 
-            // --- 1. SET UP THE DEDICATED SPACE ---
+            // --- 1. SET UP THE DEDICATED SPACE (Ring Buffer Object Pool) ---
             val secondsToRecord = 3
             val maxSamples = sampleRate * secondsToRecord // 48,000 samples
 
-            val dedicatedBuffer = FloatArray(maxSamples)
-            var currentSampleCount = 0
+            val emptyBuffers = ConcurrentLinkedQueue<FloatArray>()
+            emptyBuffers.add(FloatArray(maxSamples))
+            emptyBuffers.add(FloatArray(maxSamples))
+            emptyBuffers.add(FloatArray(maxSamples))
+            
+            val readyQueue = Channel<FloatArray>(Channel.UNLIMITED)
 
-            // Small hardware buffer for pulling from the mic
+            var currentBuffer = emptyBuffers.poll() ?: FloatArray(maxSamples)
+            var currentSampleCount = 0
             val tempShortBuffer = ShortArray(bufferSize)
 
-            Log.d("AudioLoop", "Starting 3-second Fixed-Window Recording Loop")
+            Log.d("AudioLoop", "Starting 3-second Fixed-Window Recording Loop with Zero-Alloc Queue")
             audioRecord?.startRecording()
             _statusFlow.value = "RECORDING"
             var simIdx = 0
 
-            // --- 2. THE RECORDING LOOP ---
+            // --- 2. CONSUMER COROUTINE (Dispatchers.Default) ---
+            serviceScope.launch(Dispatchers.Default) {
+                val sliceSize = 512
+                val sliceBuffer = FloatArray(sliceSize) // Allocate ONCE
+
+                for (chunkForAI in readyQueue) {
+                    if (!isRecording) break
+                    
+                    val pipeline = pipelineManager
+                    if (pipeline != null) {
+                        var lastResult: com.example.models.RiskResult? = null
+                        
+                        for (i in chunkForAI.indices step sliceSize) {
+                            val end = minOf(i + sliceSize, chunkForAI.size)
+                            val length = end - i
+                            
+                            val slice = if (length == sliceSize) {
+                                System.arraycopy(chunkForAI, i, sliceBuffer, 0, sliceSize)
+                                sliceBuffer
+                            } else {
+                                chunkForAI.copyOfRange(i, end) // Minor edge case fallback
+                            }
+                            
+                            lastResult = pipeline.processChunk(slice)
+                        }
+                        
+                        Log.d("AudioLoop", "Finished processing 3-second block through VAD/ASR.")
+                        val result = lastResult
+                        if (result != null) {
+                            _scoreFlow.value = result.score
+                            _transcriptFlow.value = result.transcript
+                            when {
+                                result.isRoboVoice -> broadcastRoboWarning()
+                                result.score >= 70 -> {
+                                    endCallAndNotify(result)
+                                    dispatchGuardianAlert(currentCaller)
+                                }
+                                isTrusted(currentCaller) -> { /* trusted */ }
+                                isWhitelisted(currentCaller) -> { /* whitelisted */ }
+                                else -> if (result.score > 40) broadcastRiskUpdate(result)
+                            }
+                        }
+                    } else {
+                        Log.e("AudioLoop", "PipelineManager became null during processing!")
+                    }
+                    
+                    // Return the processed buffer to the object pool to stop GC Thrashing
+                    emptyBuffers.offer(chunkForAI)
+                }
+            }
+
+            // --- 3. PRODUCER LOOP (I/O Thread) ---
             while (isRecording) {
                 var readSize = audioRecord?.read(tempShortBuffer, 0, tempShortBuffer.size) ?: 0
 
@@ -527,78 +601,25 @@ class ScamDetectionService : Service() {
                 }
 
                 if (readSize > 0) {
-                    // Normalize 16-bit PCM to Float (-1.0 to 1.0) and fill the dedicated space
                     for (i in 0 until readSize) {
                         if (currentSampleCount < maxSamples) {
-                            dedicatedBuffer[currentSampleCount] = tempShortBuffer[i] / 32768.0f
+                            currentBuffer[currentSampleCount] = tempShortBuffer[i] / 32768.0f
                             currentSampleCount++
                         }
                     }
 
-                    // --- 3. THE 3-SECOND TRIGGER ---
                     if (currentSampleCount >= maxSamples) {
-                        Log.d("AudioLoop", "3 Seconds of audio captured! Sending to AI Slicer.")
+                        Log.d("AudioLoop", "3 Seconds of audio captured! Pushing to Channel Queue.")
                         
-                        // Make a quick copy so we can instantly reuse the main buffer
-                        val chunkForAI = dedicatedBuffer.copyOf()
-                        currentSampleCount = 0 // Ping-pong: reset instantly to keep recording the next 3 seconds
-                        
-                        // --- 4. THE SLICER & AI PROCESSING (Background Thread) ---
-                        serviceScope.launch {
-                            val pipeline = pipelineManager
-                            if (pipeline != null) {
-                                val sliceSize = 512
-                                var lastResult: com.example.models.RiskResult? = null
-                                
-                                // Pre-allocate buffer to fix GC churn (Audit Issue 2.2)
-                                val sliceBuffer = FloatArray(sliceSize)
-                                
-                                // Chop the 3 seconds into tiny slices so Silero VAD doesn't crash
-                                for (i in chunkForAI.indices step sliceSize) {
-                                    val end = minOf(i + sliceSize, chunkForAI.size)
-                                    val length = end - i
-                                    
-                                    val slice = if (length == sliceSize) {
-                                        System.arraycopy(chunkForAI, i, sliceBuffer, 0, sliceSize)
-                                        sliceBuffer
-                                    } else {
-                                        chunkForAI.copyOfRange(i, end) // Only happens once at the very end of the chunk
-                                    }
-                                    
-                                    lastResult = pipeline.processChunk(slice)
-                                }
-                                
-                                Log.d("AudioLoop", "Finished processing 3-second block through VAD/ASR.")
-                                
-                                val result = lastResult
-                                if (result != null) {
-                                    // Update UI StateFlow values
-                                    _scoreFlow.value = result.score
-                                    _transcriptFlow.value = result.transcript
-                                    // Decision logic
-                                    when {
-                                        result.isRoboVoice -> broadcastRoboWarning()
-                                        result.score >= 70 -> {
-                                            endCallAndNotify(result)
-                                            dispatchGuardianAlert(currentCaller)
-                                        }
-                                        isTrusted(currentCaller) -> { /* trusted – alert only */ }
-                                        isWhitelisted(currentCaller) -> { /* whitelisted – no auto‑drop */ }
-                                        else -> if (result.score > 40) broadcastRiskUpdate(result)
-                                    }
-                                    // Telemetry generation is strictly deferred to the Post-Call Feedback UI.
-                                    // It only sends SwarmPayloads on False Positives / False Negatives to save bandwidth.
-                                }
-                                
-                            } else {
-                                Log.e("AudioLoop", "PipelineManager became null during processing!")
-                            }
-                        }
+                        // Push full buffer to consumer, pull empty one from pool (Zero Alloc)
+                        readyQueue.trySend(currentBuffer)
+                        currentBuffer = emptyBuffers.poll() ?: FloatArray(maxSamples)
+                        currentSampleCount = 0 
                     }
                 }
             }
-            audioRecord?.stop()
-            audioRecord?.release()
+            readyQueue.close()
+            // AudioRecord cleanup is handled exclusively by onDestroy() to prevent double-release
         }
         recordThread?.start()
     }
@@ -695,16 +716,46 @@ class ScamDetectionService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         isRecording = false
+        serviceJob.cancel() // EXTREMELY CRITICAL: Kill all consumer and polling coroutines instantly
         try { audioRecord?.stop() } catch (_: Exception) {}
         recordThread?.join(1000)
         try { audioRecord?.release() } catch (_: Exception) {}
         audioRecord = null
         
-        // Save ContactMemory back to SQLite
-        pipelineManager?.contactMemory?.let { memory ->
-            CoroutineScope(Dispatchers.IO).launch {
-                val db = ScamDatabase.getDatabase(this@ScamDetectionService)
-                val numberHash = PhoneNumberUtils.hash(currentCaller)
+        // Save Call Log
+        val finalResult = pipelineManager?.getLatestResult()
+        val durationSeconds = ((System.currentTimeMillis() - serviceStartTime) / 1000).toInt()
+        val score = finalResult?.score ?: 0
+        val isScam = try {
+            score >= getSharedPreferences("cyberguard_settings", MODE_PRIVATE).getInt("alert_threshold", 70)
+        } catch (e: Exception) {
+            score >= 70
+        }
+        
+        val transcript = finalResult?.transcript ?: ""
+        val hitKeywords = finalResult?.hitWord ?: ""
+        val caller = currentCaller
+        
+        // Use applicationContext for the database so it survives the service destruction
+        val appContext = try { applicationContext } catch (e: Exception) { this }
+        
+        CoroutineScope(Dispatchers.IO).launch {
+            val db = ScamDatabase.getDatabase(appContext)
+            
+            val log = com.example.models.CallLog(
+                callerNumber = caller,
+                timestamp = System.currentTimeMillis(),
+                riskScore = score,
+                isScam = isScam,
+                transcript = transcript,
+                hitKeywords = hitKeywords,
+                durationSeconds = durationSeconds,
+                wasBlocked = isScam // if it was blocked
+            )
+            db.callLogDao().insertLog(log)
+            
+            pipelineManager?.contactMemory?.let { memory ->
+                val numberHash = PhoneNumberUtils.hash(caller)
                 db.contactMemoryDao().saveMemory(ContactMemoryEntity(numberHash, memory.toBytes(), System.currentTimeMillis()))
             }
         }

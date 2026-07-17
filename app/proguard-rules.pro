@@ -21,3 +21,15 @@
 #-renamesourcefileattribute SourceFile
 
 -assumenosideeffects class android.util.Log { *; }
+
+# Preserve ONNX and Sherpa JNI bindings (Crucial for V1.1_Updates Section 2)
+-keep class ai.onnxruntime.** { *; }
+-keep class com.k2fsa.sherpa.onnx.** { *; }
+
+# Preserve Native Secrets JNI mapping
+-keep class com.example.security.NativeSecrets { *; }
+
+# Preserve Moshi Data Classes for API parsing
+-keep class com.example.models.** { *; }
+-keep class com.squareup.moshi.** { *; }
+-keep interface com.squareup.moshi.** { *; }

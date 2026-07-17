@@ -11,7 +11,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.Dialpad
 import androidx.compose.material.icons.filled.List
-import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -64,8 +64,8 @@ fun AppHeader(
             )
             Spacer(modifier = Modifier.width(16.dp))
             Icon(
-                imageVector = Icons.Filled.Menu,
-                contentDescription = "Menu",
+                imageVector = Icons.Filled.Settings,
+                contentDescription = "Settings",
                 tint = Gray800,
                 modifier = Modifier
                     .size(24.dp)

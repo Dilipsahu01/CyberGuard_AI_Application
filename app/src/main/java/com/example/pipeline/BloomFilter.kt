@@ -36,6 +36,28 @@ class BloomFilter(private val bitSize: Int = 10000000, private val numHash: Int 
     }
 
     /**
+     * V1.1_Updates Section 6: Offline Threat Intelligence
+     * Loads the entire pre-built DOT scammer database from Room into the BloomFilter 
+     * for 0ms latency detection.
+     */
+    fun loadFromDatabase(context: android.content.Context) {
+        kotlin.concurrent.thread {
+            try {
+                val db = com.example.models.ScamDatabase.getDatabase(context)
+                val cursor = db.query("SELECT phone_number FROM dot_scammers", null)
+                cursor.use {
+                    while (it.moveToNext()) {
+                        add(it.getString(0))
+                    }
+                }
+                android.util.Log.i("BloomFilter", "Successfully loaded offline DOT scam blacklist into memory!")
+            } catch (e: Exception) {
+                android.util.Log.e("BloomFilter", "Failed to load offline threat intelligence: ${e.message}")
+            }
+        }
+    }
+
+    /**
      * MurmurHash3 implementation for 32-bit hash.
      */
     private fun murmurHash3(data: String): Int {

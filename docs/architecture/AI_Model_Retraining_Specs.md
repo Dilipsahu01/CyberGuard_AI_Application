@@ -75,8 +75,17 @@ While not ML models, these are critical high-speed filters running before the NL
 * **Input Node:** Caller Phone Number E.164 (String).
 * **Operation:** Normalization -> SHA-256 Hashing -> MurmurHash3 Bit Array mapping.
 * **Output Node:** Boolean (`true` if the number is probabilistically identified as a known scammer).
-* **Updating:** Requires rebuilding the 10-million bit `BitSet` payload if new scam numbers are added to the database.
+* **Updating:** `BloomFilter.kt` dynamically loads the offline `dot_scam_blacklist.csv` Room database on startup.
+
+---
+## 5. V1.1 Post-Training Cryptography (The Vault)
+> **CRITICAL:** Do NOT drop plaintext `.onnx` or `.ort` files directly into the Android `assets/models/` folder. They will fail the SHA-256 integrity check and crash the application.
+
+Once you have fine-tuned and exported your models:
+1. Place the plaintext models inside the `raw_models_backup/` directory.
+2. Run `python3 encrypt_models.py` from the root of the project.
+3. This script will AES-256 encrypt the models into `.enc` files and automatically deploy them to the Android `assets/` folder with updated SHA-256 hashes.
 
 ---
 **Summary of the Data Flow (Left to Right Nodes):**
-`Raw Audio (Mic)` -> `[VAD Model]` -> `[ASR Model]` -> `Raw Text` -> `[RegexGate]` -> `[NLP Tokenizer]` -> `[MiniLM Model]` -> `384D Vector` -> `[Cosine Similarity]` -> `Risk Score %`
+`Hardware Keystore` -> `AES RAM Decryption` -> `Raw Audio (Mic)` -> `[VAD Model]` -> `[ASR Model]` -> `Raw Text` -> `[RegexGate]` -> `[NLP Tokenizer]` -> `[MiniLM Model]` -> `384D Vector` -> `[Cosine Similarity]` -> `Risk Score %`

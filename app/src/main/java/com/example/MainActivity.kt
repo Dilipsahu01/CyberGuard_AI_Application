@@ -16,6 +16,7 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.widget.Toast
+import com.example.security.EnvironmentGuard
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -70,6 +71,14 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        
+        // V1.1_Updates Section 3: The Tripwire
+        if (EnvironmentGuard.isDeviceCompromised()) {
+            Toast.makeText(this, "SECURITY ALERT: Compromised/Rooted Environment Detected. Shutting down to protect AI Models.", Toast.LENGTH_LONG).show()
+            finishAffinity()
+            return
+        }
+
         enableEdgeToEdge()
 
         val factory = PipelineViewModelFactory(application)
@@ -77,13 +86,35 @@ class MainActivity : ComponentActivity() {
         setContent {
             MyApplicationTheme {
                 val viewModel: PipelineViewModel = viewModel(factory = factory)
+                var bypassOnboarding by remember { mutableStateOf(false) }
                 
-                // Refresh permissions state every time screen is shown
-                LaunchedEffect(Unit) {
-                    viewModel.checkAllPermissions()
+                // Refresh permissions state every time the app resumes
+                val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+                DisposableEffect(lifecycleOwner) {
+                    val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+                        if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                            viewModel.checkAllPermissions()
+                        }
+                    }
+                    lifecycleOwner.lifecycle.addObserver(observer)
+                    onDispose {
+                        lifecycleOwner.lifecycle.removeObserver(observer)
+                    }
                 }
 
-                AppNavigation()
+                // If any permissions are false or the state map is empty (initializing), show the onboarding screen
+                val needsPermissions = viewModel.permissionStates.isEmpty() || viewModel.permissionStates.values.any { !it }
+                
+                if (needsPermissions && !bypassOnboarding) {
+                    com.example.ui.PermissionsOnboardingScreen(
+                        onGrantPermissions = {
+                            viewModel.checkAllPermissions()
+                        },
+                        onSkip = { bypassOnboarding = true }
+                    )
+                } else {
+                    AppNavigation(viewModel)
+                }
             }
         }
     }

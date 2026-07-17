@@ -16,10 +16,7 @@ import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Person
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
+import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -39,9 +36,6 @@ import android.telephony.PhoneNumberUtils
 import android.telecom.PhoneAccountHandle
 import android.telecom.TelecomManager
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ListItem
-import androidx.compose.material3.ModalBottomSheet
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -94,7 +88,6 @@ private fun getT9String(name: String): String {
     }.joinToString("")
 }
 
-// Row layout: digit to (letters, row)
 private val keypadRows = listOf(
     listOf("1" to "", "2" to "ABC", "3" to "DEF"),
     listOf("4" to "GHI", "5" to "JKL", "6" to "MNO"),
@@ -110,7 +103,7 @@ fun DialerScreen(
     var dialedNumber by remember { mutableStateOf("") }
     val context = LocalContext.current
     var contactsList by remember { mutableStateOf(mockT9Contacts) }
-    
+
     LaunchedEffect(Unit) {
         val local = getLocalContacts(context)
         if (local.isNotEmpty()) {
@@ -122,9 +115,11 @@ fun DialerScreen(
         SimpleDateFormat("hh:mm a 'IST', dd MMM, EEEE", Locale.getDefault()).format(Date())
     }
 
-    // SIM Selection State
     var showSimSelector by remember { mutableStateOf(false) }
+    var setDefaultSim by remember { mutableStateOf(false) }
     val telecomManager = remember { context.getSystemService(Context.TELECOM_SERVICE) as TelecomManager }
+    val sharedPrefs = remember { context.getSharedPreferences("cyberguard_settings", Context.MODE_PRIVATE) }
+
     val availableSims = remember {
         try {
             telecomManager.callCapablePhoneAccounts
@@ -135,86 +130,93 @@ fun DialerScreen(
 
     Surface(color = Color.White, modifier = Modifier.fillMaxSize().systemBarsPadding()) {
         Column(modifier = Modifier.fillMaxSize()) {
-            
-            // ---- App header (Logo + menu) ----
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 24.dp, vertical = 16.dp), // Increased horizontal safe-area padding
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Text(
-                    text = "CYBERGUARD-AI",
-                    color = TitleBrown,
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.SemiBold
-                )
-                Box(
+
+            // ---- MANDATE 1: Top Section (Header, Input, Contacts, Location) ----
+            Column(modifier = Modifier.wrapContentHeight().fillMaxWidth()) {
+
+                // Header
+                Row(
                     modifier = Modifier
-                        .size(48.dp) // Minimum touch target size
-                        .clickable { /* Menu action */ },
-                    contentAlignment = Alignment.Center
+                        .fillMaxWidth()
+                        .padding(horizontal = 24.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Icon(
-                        imageVector = Icons.Filled.Menu,
-                        contentDescription = "Menu",
-                        tint = Gray800,
-                        modifier = Modifier.size(24.dp)
+                    Text(
+                        text = "CYBERGUARD-AI",
+                        color = TitleBrown,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.SemiBold
                     )
-                }
-            }
 
-            // ---- Content pushed to bottom matching standard dialers ----
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 24.dp),
-                verticalArrangement = Arrangement.Bottom,
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-
-                // ---- Smart T9 Predictive Contacts ----
-                if (dialedNumber.isNotEmpty()) {
-                    val matchedContacts = remember(dialedNumber, contactsList) {
-                        contactsList.filter { contact ->
-                            getT9String(contact.name).contains(dialedNumber) ||
-                            contact.number.contains(dialedNumber)
+                    var showMenu by remember { mutableStateOf(false) }
+                    Box {
+                        IconButton(onClick = { showMenu = true }) {
+                            Icon(imageVector = Icons.Filled.Menu, contentDescription = "Menu", tint = Gray800)
+                        }
+                        DropdownMenu(
+                            expanded = showMenu,
+                            onDismissRequest = { showMenu = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("Reset Default SIM") },
+                                onClick = {
+                                    sharedPrefs.edit().remove("default_sim_id").apply()
+                                    showMenu = false
+                                }
+                            )
                         }
                     }
+                }
 
-                    if (matchedContacts.isNotEmpty()) {
-                        LazyRow(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(bottom = 16.dp),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            items(matchedContacts) { contact ->
-                                SuggestedContactChip(
-                                    contact = contact,
-                                    onClick = { dialedNumber = contact.number }
-                                )
+                // ---- FIXED: Anti-Jank Contact Space (Always 90.dp) ----
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(90.dp) // Reserved vertical space to prevent layout shift
+                        .padding(horizontal = 16.dp),
+                    contentAlignment = Alignment.CenterStart
+                ) {
+                    if (dialedNumber.isNotEmpty()) {
+                        val matchedContacts = remember(dialedNumber, contactsList) {
+                            contactsList.filter { contact ->
+                                getT9String(contact.name).contains(dialedNumber) ||
+                                contact.number.contains(dialedNumber)
+                            }
+                        }
+
+                        if (matchedContacts.isNotEmpty()) {
+                            LazyRow(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                contentPadding = PaddingValues(vertical = 8.dp)
+                            ) {
+                                items(matchedContacts) { contact ->
+                                    SuggestedContactChip(
+                                        contact = contact,
+                                        onClick = { dialedNumber = contact.number }
+                                    )
+                                }
                             }
                         }
                     }
                 }
 
-                // ---- Number display row ("+91 ...") ----
+                // Number Display
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp)
                         .border(width = 1.dp, color = BorderGray)
-                        .padding(16.dp),
+                        .padding(12.dp),
                     horizontalArrangement = Arrangement.Center,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     val formattedNumber = PhoneNumberUtils.formatNumber(dialedNumber, Locale.getDefault().country) ?: dialedNumber
                     Text(
-                        text = if (dialedNumber.isNotEmpty()) formattedNumber else "",
+                        text = if (dialedNumber.isNotEmpty()) formattedNumber else " ",
                         color = Gray800,
-                        fontSize = 24.sp,
+                        fontSize = 26.sp,
                         fontWeight = FontWeight.SemiBold,
                         textAlign = TextAlign.Center,
                         maxLines = 1,
@@ -230,123 +232,134 @@ fun DialerScreen(
                     )
                 }
 
-                // ---- Info strip (flag + local date/time) ----
+                // Info Strip (Location Hook)
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .padding(horizontal = 16.dp)
                         .background(BlueBg)
                         .border(width = 1.dp, color = Primary)
-                        .padding(16.dp),
+                        .padding(12.dp),
                     horizontalArrangement = Arrangement.Center,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(text = "\uD83C\uDDEE\uD83C\uDDF3", fontSize = 16.sp) // India flag emoji
+                    Text(text = "\uD83C\uDDEE\uD83C\uDDF3", fontSize = 14.sp)
                     Spacer(Modifier.width(8.dp))
                     Text(
-                        text = currentTime,
+                        text = "Jaipur, Rajasthan • $currentTime",
                         color = Gray700,
-                        fontSize = 14.sp,
+                        fontSize = 12.sp,
                         fontWeight = FontWeight.Medium
                     )
                 }
+            }
 
-                Spacer(Modifier.height(24.dp))
+            Spacer(Modifier.height(16.dp))
 
-                // ---- Keypad ----
-                keypadRows.forEachIndexed { rowIndex, row ->
-                    Row(modifier = Modifier.fillMaxWidth()) {
+            // ---- MANDATE 1: Middle Section (Dialpad Grid with weight(1f)) ----
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f) // STRETCH TO FILL AVAILABLE SPACE
+                    .padding(horizontal = 16.dp)
+            ) {
+                keypadRows.forEach { row ->
+                    Row(modifier = Modifier.fillMaxWidth().weight(1f)) {
                         row.forEach { (digit, letters) ->
                             KeypadCell(
                                 digit = digit,
                                 letters = letters,
-                                showBottomBorder = rowIndex != keypadRows.lastIndex,
-                                modifier = Modifier.weight(1f),
+                                modifier = Modifier.weight(1f).fillMaxHeight(),
                                 onClick = { dialedNumber += digit },
                                 onLongClick = when (digit) {
                                     "0" -> { { dialedNumber += "+" } }
-                                    "1" -> { { /* Dial Voicemail logic */ } }
                                     else -> null
                                 }
                             )
                         }
                     }
                 }
+            }
 
-                Spacer(Modifier.height(32.dp))
+            // ---- MANDATE 1: Bottom Section (Call Button anchored at bottom) ----
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .wrapContentHeight()
+                    .padding(horizontal = 32.dp, vertical = 24.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Spacer(modifier = Modifier.size(48.dp))
 
-                // ---- Call button row ----
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 32.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Spacer(modifier = Modifier.size(48.dp)) // Empty space for alignment
-                    
-                    // Call Button
-                    Box(
-                        modifier = Modifier
-                            .size(64.dp)
-                            .clip(CircleShape)
-                            .background(GreenCall)
-                            .border(width = 1.dp, color = EmeraldBorder, shape = CircleShape)
-                            .clickable { 
-                                if (availableSims.size > 1) {
-                                    showSimSelector = true
-                                } else {
-                                    onCallClick("+91$dialedNumber") 
-                                }
-                            },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Filled.Call,
-                            contentDescription = "Call",
-                            tint = Color.White,
-                            modifier = Modifier.size(24.dp)
-                        )
-                    }
-
-                    // Backspace Button
-                    if (dialedNumber.isNotEmpty()) {
-                        Box(
-                            modifier = Modifier
-                                .size(48.dp) // Minimum 48dp touch target
-                                .clip(CircleShape)
-                                .combinedClickable(
-                                    onClick = { dialedNumber = dialedNumber.dropLast(1) },
-                                    onLongClick = { dialedNumber = "" }
-                                ),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.Backspace,
-                                contentDescription = "Backspace",
-                                tint = Gray600,
-                                modifier = Modifier.size(28.dp)
-                            )
+                // Massive Call Button (FloatingActionButton)
+                FloatingActionButton(
+                    onClick = {
+                        if (dialedNumber.isNotEmpty()) {
+                            val defaultSimId = sharedPrefs.getString("default_sim_id", null)
+                            if (defaultSimId != null) {
+                                onCallClick("+91$dialedNumber")
+                            } else if (availableSims.size > 1) {
+                                showSimSelector = true
+                            } else {
+                                onCallClick("+91$dialedNumber")
+                            }
                         }
-                    } else {
-                        Spacer(modifier = Modifier.size(48.dp)) // Keep row layout balanced
+                    },
+                    containerColor = GreenCall,
+                    contentColor = Color.White,
+                    shape = CircleShape,
+                    modifier = Modifier.size(72.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Call,
+                        contentDescription = "Call",
+                        modifier = Modifier.size(32.dp)
+                    )
+                }
+
+                // Backspace Button
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .clip(CircleShape)
+                        .then(if (dialedNumber.isNotEmpty()) {
+                            Modifier.combinedClickable(
+                                onClick = { dialedNumber = dialedNumber.dropLast(1) },
+                                onLongClick = { dialedNumber = "" }
+                            )
+                        } else Modifier),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (dialedNumber.isNotEmpty()) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.Backspace,
+                            contentDescription = "Backspace",
+                            tint = Gray600,
+                            modifier = Modifier.size(28.dp)
+                        )
                     }
                 }
             }
         }
     }
 
-    // SIM Selection Bottom Sheet Dialog
+    // SIM Selection Bottom Sheet
     if (showSimSelector) {
         ModalBottomSheet(onDismissRequest = { showSimSelector = false }) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Text("Select SIM for this call", fontSize = 18.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(bottom = 16.dp))
+
                 availableSims.forEach { sim ->
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clickable {
+                                if (setDefaultSim) {
+                                    sharedPrefs.edit().putString("default_sim_id", sim.id).apply()
+                                }
                                 showSimSelector = false
-                                onCallClick("+91$dialedNumber") // In a real app we pass 'sim' object to the intent
+                                onCallClick("+91$dialedNumber")
                             }
                             .padding(16.dp),
                         verticalAlignment = Alignment.CenterVertically
@@ -354,7 +367,14 @@ fun DialerScreen(
                         Text(sim.id, fontSize = 16.sp, color = Gray800)
                     }
                 }
-                Spacer(modifier = Modifier.height(32.dp))
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(top = 16.dp, bottom = 32.dp).clickable { setDefaultSim = !setDefaultSim }
+                ) {
+                    Checkbox(checked = setDefaultSim, onCheckedChange = { setDefaultSim = it })
+                    Text("Set as Default SIM", fontSize = 14.sp, color = Gray600, modifier = Modifier.padding(start = 8.dp))
+                }
             }
         }
     }
@@ -365,7 +385,7 @@ private fun SuggestedContactChip(contact: T9Contact, onClick: () -> Unit) {
     Row(
         modifier = Modifier
             .clip(RoundedCornerShape(14.dp))
-            .background(Gray50) // From Theme.kt
+            .background(Gray50)
             .border(1.dp, BorderGray, RoundedCornerShape(14.dp))
             .clickable(onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 8.dp),
@@ -379,25 +399,16 @@ private fun SuggestedContactChip(contact: T9Contact, onClick: () -> Unit) {
             contentAlignment = Alignment.Center
         ) {
             Icon(
-                imageVector = Icons.Filled.Person, 
-                contentDescription = null, 
-                tint = Primary, 
+                imageVector = Icons.Filled.Person,
+                contentDescription = null,
+                tint = Primary,
                 modifier = Modifier.size(18.dp)
             )
         }
         Spacer(Modifier.width(10.dp))
         Column {
-            Text(
-                text = contact.name, 
-                color = Gray800, 
-                fontSize = 14.sp, 
-                fontWeight = FontWeight.Medium
-            )
-            Text(
-                text = "+91 ${contact.number}", 
-                color = Gray500, 
-                fontSize = 11.sp
-            )
+            Text(text = contact.name, color = Gray800, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+            Text(text = "+91 ${contact.number}", color = Gray500, fontSize = 11.sp)
         }
     }
 }
@@ -407,43 +418,47 @@ private fun SuggestedContactChip(contact: T9Contact, onClick: () -> Unit) {
 private fun KeypadCell(
     digit: String,
     letters: String,
-    showBottomBorder: Boolean,
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
     onLongClick: (() -> Unit)? = null
 ) {
-    Column(
+    Box(
         modifier = modifier
-            .then(
-                if (showBottomBorder)
-                    Modifier.border(width = 1.dp, color = BorderGray)
-                else Modifier
-            )
+            .padding(2.dp)
+            .clip(RoundedCornerShape(8.dp))
             .combinedClickable(
                 onClick = onClick,
                 onLongClick = onLongClick
-            )
-            .defaultMinSize(minHeight = 64.dp) // Ensure minimum touch target size
-            .padding(vertical = 16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(4.dp)
+            ),
+        contentAlignment = Alignment.Center
     ) {
-        Text(
-            text = digit,
-            color = Gray800,
-            fontSize = 24.sp,
-            fontWeight = FontWeight.SemiBold,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.fillMaxWidth()
-        )
-        if (letters.isNotEmpty()) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            // ---- MANDATE 2: Auto-Scaling Keypad (Balanced font size) ----
             Text(
-                text = letters,
-                color = Gray500,
-                fontSize = 12.sp,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth()
+                text = digit,
+                color = Gray800,
+                fontSize = 28.sp,
+                fontWeight = FontWeight.Normal,
+                textAlign = TextAlign.Center
             )
+            if (letters.isNotEmpty()) {
+                Text(
+                    text = letters,
+                    color = Gray500,
+                    fontSize = 10.sp,
+                    textAlign = TextAlign.Center,
+                    fontWeight = FontWeight.Light
+                )
+            } else {
+                // Keep digit centered relative to those with letters
+                Text(
+                    text = " ",
+                    fontSize = 10.sp
+                )
+            }
         }
     }
 }

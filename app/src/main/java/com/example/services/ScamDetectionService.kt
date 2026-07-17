@@ -2,12 +2,12 @@ package com.example.services
 
 /**
  * ScamDetectionService.kt
- * 
- * PURPOSE: 
+ *
+ * PURPOSE:
  * This Foreground Service is the beating heart of the Android application.
  * It intercepts the phone's microphone natively, manages the 3-second audio recording loop,
  * and controls the UI Overlay (Red/Yellow screens).
- * 
+ *
  * WHY IT EXISTS:
  * 1. Background Execution: Keeps the AI pipeline running even if the app is minimized.
  * 2. Hardware Access: Manages WakeLocks and Microphone buffers safely without memory leaks.
@@ -95,7 +95,7 @@ class ScamDetectionService : Service() {
     private var recordThread: Thread? = null
     @Volatile private var audioRecord: AudioRecord? = null
     private var currentCaller = "Unknown"
-    private var isScamDemo = false
+
     private var wakeLock: PowerManager.WakeLock? = null
     private var serviceStartTime = 0L
     private var lastTelemetryTime = 0L
@@ -125,7 +125,7 @@ class ScamDetectionService : Service() {
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
-        
+
         // Pull latest whitelist from server (fire‑and‑forget)
         serviceScope.launch { syncWhitelistFromServer() }
         // Initialize Room DB
@@ -136,7 +136,11 @@ class ScamDetectionService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         serviceStartTime = System.currentTimeMillis()
-        
+        Log.e("AI_ENGINE", "==========================================================")
+        Log.e("AI_ENGINE", "BOOT SEQUENCE INITIATED: ScamDetectionService onStartCommand")
+        Log.e("AI_ENGINE", "TARGET CALLER: $currentCaller")
+        Log.e("AI_ENGINE", "==========================================================")
+
         // Only promote to Foreground Service if RECORD_AUDIO is granted
         val hasMicPermission = ContextCompat.checkSelfPermission(this, android.Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
         if (hasMicPermission) {
@@ -179,10 +183,10 @@ class ScamDetectionService : Service() {
                 Log.w(tag, "Call screening role not held. Allowing anyway for Dev Mode.")
             }
         }
-        
+
         // Caller info
         currentCaller = intent?.getStringExtra(Constants.EXTRA_CALLER_NUMBER) ?: "Unknown"
-        isScamDemo = intent?.getBooleanExtra("is_scam_scenario", false) ?: false
+
         serviceStartTime = System.currentTimeMillis()
 
         // --- STAGE 1: SOS / EMERGENCY BYPASS ---
@@ -210,9 +214,9 @@ class ScamDetectionService : Service() {
                 if (dotScammer != null && dotScammer.severityScore >= 80) {
                     Log.w(tag, "DoT Blacklist hit for $currentCaller! Dropping call instantly.")
                     val dummyResult = RiskResult(
-                        score = dotScammer.severityScore, 
-                        transcript = "Blocked by Department of Telecommunications Blacklist", 
-                        isRoboVoice = false, 
+                        score = dotScammer.severityScore,
+                        transcript = "Blocked by Department of Telecommunications Blacklist",
+                        isRoboVoice = false,
                         hitWord = "DoT_Blacklist",
                         intents = IntentScores(100, 100, 100, 0, 0)
                     )
@@ -233,17 +237,17 @@ class ScamDetectionService : Service() {
                 val numberHash = PhoneNumberUtils.hash(currentCaller)
                 val memoryEntity = db.contactMemoryDao().getMemory(numberHash)
                 val contactMemory = if (memoryEntity != null) ContactMemory.fromBytes(memoryEntity.memory) else ContactMemory()
-                
+
                 // Update basic call metrics
                 contactMemory.totalCalls = (contactMemory.totalCalls + 1).coerceAtMost(255)
 
                 val mgr = com.example.pipeline.PipelineSingleton.getInstance(this@ScamDetectionService)
                 mgr.reset()
-                mgr.setSimulationScenario(isScamDemo)
+
                 mgr.contactMemory = contactMemory
                 pipelineManager = mgr
                 Log.i(tag, "Pipeline loaded successfully")
-                
+
                 if (!isRecording) {
                     startInferencePipeline()
                     startNotificationTick()
@@ -495,16 +499,26 @@ class ScamDetectionService : Service() {
             val minBuf = AudioRecord.getMinBufferSize(sampleRate, channelConfig, audioFormat)
             val bufferSize = minBuf.coerceAtLeast(3200)
             audioRecord = null
-            // Try MIC then VOICE_RECOGNITION as fallbacks
-            val sources = listOf(MediaRecorder.AudioSource.MIC, MediaRecorder.AudioSource.VOICE_RECOGNITION)
-            for (src in sources) {
-                try {
-                    @SuppressLint("MissingPermission")
-                    val rec = AudioRecord(src, sampleRate, channelConfig, audioFormat, bufferSize)
-                    if (rec.state == AudioRecord.STATE_INITIALIZED) { audioRecord = rec; break }
-                } catch (e: Exception) { /* try next */ }
+            // 1. The Audio Routing Fix (VOICE_COMMUNICATION)
+            val source = MediaRecorder.AudioSource.VOICE_COMMUNICATION
+            try {
+                @SuppressLint("MissingPermission")
+                val rec = AudioRecord(source, sampleRate, channelConfig, audioFormat, bufferSize)
+                if (rec.state == AudioRecord.STATE_INITIALIZED) {
+                    audioRecord = rec
+                    // Explicitly inject AcousticEchoCanceler and NoiseSuppressor
+                    if (android.media.audiofx.AcousticEchoCanceler.isAvailable()) {
+                        android.media.audiofx.AcousticEchoCanceler.create(rec.audioSessionId)?.enabled = true
+                    }
+                    if (android.media.audiofx.NoiseSuppressor.isAvailable()) {
+                        android.media.audiofx.NoiseSuppressor.create(rec.audioSessionId)?.enabled = true
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e("TELECOM_DEBUG", "Failed to initialize AudioRecord with VOICE_COMMUNICATION: ${e.message}", e)
             }
-            if (audioRecord == null && !isScamDemo) {
+
+            if (audioRecord == null) {
                 Log.e(tag, "No usable audio source – aborting")
                 _statusFlow.value = "MIC_UNAVAILABLE"
                 isRecording = false
@@ -524,7 +538,7 @@ class ScamDetectionService : Service() {
             emptyBuffers.add(FloatArray(maxSamples))
             emptyBuffers.add(FloatArray(maxSamples))
             emptyBuffers.add(FloatArray(maxSamples))
-            
+
             val readyQueue = Channel<FloatArray>(Channel.UNLIMITED)
 
             var currentBuffer = emptyBuffers.poll() ?: FloatArray(maxSamples)
@@ -532,9 +546,18 @@ class ScamDetectionService : Service() {
             val tempShortBuffer = ShortArray(bufferSize)
 
             Log.d("AudioLoop", "Starting 3-second Fixed-Window Recording Loop with Zero-Alloc Queue")
-            audioRecord?.startRecording()
+            try {
+                Log.e("AI_ENGINE", "MICROPHONE_TRAP: Requesting hardware access (VOICE_COMMUNICATION)...")
+                audioRecord?.startRecording()
+                Log.e("AI_ENGINE", "MICROPHONE_TRAP: Hardware access GRANTED. Timestamp: ${System.currentTimeMillis()}")
+            } catch (e: Exception) {
+                Log.e("TELECOM_DEBUG", "startRecording() FAILED! Microphone access denied or route stolen: ${e.message}", e)
+                _statusFlow.value = "MIC_UNAVAILABLE"
+                isRecording = false
+                return@Thread
+            }
             _statusFlow.value = "RECORDING"
-            var simIdx = 0
+
 
             // --- 2. CONSUMER COROUTINE (Dispatchers.Default) ---
             serviceScope.launch(Dispatchers.Default) {
@@ -543,25 +566,31 @@ class ScamDetectionService : Service() {
 
                 for (chunkForAI in readyQueue) {
                     if (!isRecording) break
-                    
+
+                    Log.e("AI_ENGINE", "INFERENCE_TRAP: Incoming buffer detected. Starting Whisper/ONNX processing...")
+                    val startTime = System.currentTimeMillis()
+
                     val pipeline = pipelineManager
                     if (pipeline != null) {
                         var lastResult: com.example.models.RiskResult? = null
-                        
+
                         for (i in chunkForAI.indices step sliceSize) {
                             val end = minOf(i + sliceSize, chunkForAI.size)
                             val length = end - i
-                            
+
                             val slice = if (length == sliceSize) {
                                 System.arraycopy(chunkForAI, i, sliceBuffer, 0, sliceSize)
                                 sliceBuffer
                             } else {
                                 chunkForAI.copyOfRange(i, end) // Minor edge case fallback
                             }
-                            
+
                             lastResult = pipeline.processChunk(slice)
                         }
-                        
+
+                        val inferenceTime = System.currentTimeMillis() - startTime
+                        Log.e("AI_ENGINE", "INFERENCE_TRAP: Inference COMPLETE in ${inferenceTime}ms. Score: ${lastResult?.score}")
+
                         Log.d("AudioLoop", "Finished processing 3-second block through VAD/ASR.")
                         val result = lastResult
                         if (result != null) {
@@ -581,26 +610,22 @@ class ScamDetectionService : Service() {
                     } else {
                         Log.e("AudioLoop", "PipelineManager became null during processing!")
                     }
-                    
+
                     // Return the processed buffer to the object pool to stop GC Thrashing
                     emptyBuffers.offer(chunkForAI)
                 }
             }
 
             // --- 3. PRODUCER LOOP (I/O Thread) ---
-            while (isRecording) {
-                var readSize = audioRecord?.read(tempShortBuffer, 0, tempShortBuffer.size) ?: 0
-
-                if (readSize <= 0 && isScamDemo) {
-                    readSize = 512
-                    for (i in 0 until readSize) {
-                        tempShortBuffer[i] = (sin(2.0 * PI * 440.0 * simIdx / sampleRate) * 3276.0).toInt().toShort()
-                        simIdx++
-                    }
-                    Thread.sleep(100) // simulation pacing
+            while (isRecording && !Thread.currentThread().isInterrupted) {
+                val currentAudioRecord = audioRecord ?: break
+                val readSize = try {
+                    currentAudioRecord.read(tempShortBuffer, 0, tempShortBuffer.size)
+                } catch (e: Exception) {
+                    0
                 }
 
-                if (readSize > 0) {
+                if (readSize > 0 && isRecording) {
                     for (i in 0 until readSize) {
                         if (currentSampleCount < maxSamples) {
                             currentBuffer[currentSampleCount] = tempShortBuffer[i] / 32768.0f
@@ -610,11 +635,11 @@ class ScamDetectionService : Service() {
 
                     if (currentSampleCount >= maxSamples) {
                         Log.d("AudioLoop", "3 Seconds of audio captured! Pushing to Channel Queue.")
-                        
+
                         // Push full buffer to consumer, pull empty one from pool (Zero Alloc)
                         readyQueue.trySend(currentBuffer)
                         currentBuffer = emptyBuffers.poll() ?: FloatArray(maxSamples)
-                        currentSampleCount = 0 
+                        currentSampleCount = 0
                     }
                 }
             }
@@ -714,58 +739,81 @@ class ScamDetectionService : Service() {
     }
 
     override fun onDestroy() {
-        super.onDestroy()
+        Log.i(tag, "Service onDestroy() - Initiating asynchronous teardown.")
+
         isRecording = false
-        serviceJob.cancel() // EXTREMELY CRITICAL: Kill all consumer and polling coroutines instantly
-        try { audioRecord?.stop() } catch (_: Exception) {}
-        recordThread?.join(1000)
-        try { audioRecord?.release() } catch (_: Exception) {}
-        audioRecord = null
-        
-        // Save Call Log
-        val finalResult = pipelineManager?.getLatestResult()
-        val durationSeconds = ((System.currentTimeMillis() - serviceStartTime) / 1000).toInt()
-        val score = finalResult?.score ?: 0
-        val isScam = try {
-            score >= getSharedPreferences("cyberguard_settings", MODE_PRIVATE).getInt("alert_threshold", 70)
-        } catch (e: Exception) {
-            score >= 70
-        }
-        
-        val transcript = finalResult?.transcript ?: ""
-        val hitKeywords = finalResult?.hitWord ?: ""
-        val caller = currentCaller
-        
-        // Use applicationContext for the database so it survives the service destruction
-        val appContext = try { applicationContext } catch (e: Exception) { this }
-        
-        CoroutineScope(Dispatchers.IO).launch {
-            val db = ScamDatabase.getDatabase(appContext)
-            
-            val log = com.example.models.CallLog(
-                callerNumber = caller,
-                timestamp = System.currentTimeMillis(),
-                riskScore = score,
-                isScam = isScam,
-                transcript = transcript,
-                hitKeywords = hitKeywords,
-                durationSeconds = durationSeconds,
-                wasBlocked = isScam // if it was blocked
-            )
-            db.callLogDao().insertLog(log)
-            
-            pipelineManager?.contactMemory?.let { memory ->
-                val numberHash = PhoneNumberUtils.hash(caller)
-                db.contactMemoryDao().saveMemory(ContactMemoryEntity(numberHash, memory.toBytes(), System.currentTimeMillis()))
-            }
-        }
-        
-        // Always release the WakeLock if held
-        wakeLock?.let { if (it.isHeld) it.release() }
-        
-        // Explicitly close ONNX memory buffers and mapped byte buffers
-        com.example.pipeline.PipelineSingleton.clear()
-        
         serviceJob.cancel()
+
+        val currentAudioRecord = audioRecord
+        val currentWakeLock = wakeLock
+        val appContext = applicationContext
+        val currentPipeline = pipelineManager
+        val caller = currentCaller
+        val startTime = serviceStartTime
+
+        // Safe Asynchronous Hardware & DB Teardown
+        // We use GlobalScope here because the serviceScope is cancelled, and we MUST ensure
+        // hardware release and DB logging complete.
+        @OptIn(DelicateCoroutinesApi::class)
+        GlobalScope.launch(Dispatchers.IO) {
+            try {
+                Log.d(tag, "Background Teardown: Stopping and releasing AudioRecord...")
+                currentAudioRecord?.stop()
+                currentAudioRecord?.release()
+                Log.d(tag, "Background Teardown: AudioRecord released.")
+            } catch (e: Exception) {
+                Log.e(tag, "Background Teardown: AudioRecord release failed", e)
+            }
+
+            // Save Call Log & Memory
+            try {
+                val finalResult = currentPipeline?.getLatestResult()
+                val durationSeconds = ((System.currentTimeMillis() - startTime) / 1000).toInt()
+                val score = finalResult?.score ?: 0
+                val settings = appContext.getSharedPreferences("cyberguard_settings", MODE_PRIVATE)
+                val threshold = settings.getInt("alert_threshold", 70)
+                val isScam = score >= threshold
+
+                val db = ScamDatabase.getDatabase(appContext)
+                val log = com.example.models.CallLog(
+                    callerNumber = caller,
+                    timestamp = System.currentTimeMillis(),
+                    riskScore = score,
+                    isScam = isScam,
+                    transcript = finalResult?.transcript ?: "",
+                    hitKeywords = finalResult?.hitWord ?: "",
+                    durationSeconds = durationSeconds,
+                    wasBlocked = isScam
+                )
+                db.callLogDao().insertLog(log)
+
+                currentPipeline?.contactMemory?.let { memory ->
+                    val numberHash = PhoneNumberUtils.hash(caller)
+                    db.contactMemoryDao().saveMemory(ContactMemoryEntity(numberHash, memory.toBytes(), System.currentTimeMillis()))
+                }
+                Log.d(tag, "Background Teardown: Call logs and memory saved.")
+            } catch (e: Exception) {
+                Log.e(tag, "Background Teardown: Database logging failed", e)
+            }
+
+            // Release WakeLock
+            try {
+                if (currentWakeLock?.isHeld == true) {
+                    currentWakeLock.release()
+                    Log.d(tag, "Background Teardown: WakeLock released.")
+                }
+            } catch (e: Exception) {
+                Log.e(tag, "Background Teardown: WakeLock release failed", e)
+            }
+
+            // Clear ONNX/Singleton
+            com.example.pipeline.PipelineSingleton.clear()
+            Log.d(tag, "Background Teardown: Pipeline cleared.")
+        }
+
+        // Notify UI immediately on Main Thread
+        com.example.utils.CallStateBroadcaster.endCall()
+
+        super.onDestroy()
     }
 }

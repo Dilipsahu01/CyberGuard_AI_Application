@@ -8,13 +8,13 @@ package com.example.pipeline
 
 /**
  * SileroVAD.kt
- * 
- * PURPOSE: 
+ *
+ * PURPOSE:
  * Voice Activity Detection (VAD) model wrapper.
- * 
+ *
  * WHY IT EXISTS:
- * Evaluates 100ms audio chunks to detect if a human is speaking. If there is silence, 
- * it prevents the massive ASR and NLP models from running, saving immense amounts 
+ * Evaluates 100ms audio chunks to detect if a human is speaking. If there is silence,
+ * it prevents the massive ASR and NLP models from running, saving immense amounts
  * of battery life on budget phones.
  */
 import android.content.Context
@@ -42,14 +42,15 @@ class SileroVAD(context: Context) {
     init {
         try {
             env = OrtEnvironment.getEnvironment()
-            val bytes = getModelBytes(context)
-            if (bytes != null) {
-                session = env?.createSession(bytes)
+            val modelPath = getModelPath(context)
+            if (modelPath != null) {
+                // Load from path to allow memory-mapping (saves JVM heap)
+                session = env?.createSession(modelPath)
                 isModelLoaded = true
-                Log.d(TAG, "Silero VAD ONNX successfully loaded via byte array!")
+                Log.d(TAG, "Silero VAD ONNX successfully loaded via path: $modelPath")
                 Log.d(TAG, "Silero VAD expected inputs: ${session?.inputNames}")
             } else {
-                Log.w(TAG, "Silero VAD ONNX model bytes were null. Fallback activated.")
+                Log.w(TAG, "Silero VAD ONNX model path was null. Fallback activated.")
             }
         } catch (e: Exception) {
             Log.w(TAG, "ONNX failed to load Silero VAD, utilizing dynamic acoustic-energy fallback: ${e.message}")
@@ -122,7 +123,7 @@ class SileroVAD(context: Context) {
 
     fun isSpeech(audioChunk: FloatArray): Boolean {
         val currentIsSpeech = evaluateSpeech(audioChunk)
-        
+
         if (currentIsSpeech) {
             speechActive = true
             consecutiveSilenceChunks = 0
@@ -160,26 +161,28 @@ class SileroVAD(context: Context) {
 
     companion object {
         private const val TAG = "SileroVAD"
-        @Volatile private var modelBytes: ByteArray? = null
+        @Volatile private var cachedModelPath: String? = null
         private val lock = Any()
 
-        private fun getModelBytes(context: Context): ByteArray? {
+        private fun getModelPath(context: Context): String? {
             synchronized(lock) {
-                if (modelBytes == null) {
+                if (cachedModelPath == null) {
                     try {
-                        // V1.1_Updates Section 1: Secure Runtime Pipeline (RAM-Only Decryption)
-                        val encryptedStream = context.assets.open("models/silero_vad.ort.enc")
-                        modelBytes = com.example.security.ModelCryptoManager.decryptModelToByteArray(
-                            encryptedStream, 
+                        // V1.1_Updates Section 1: Secure Runtime Pipeline
+                        // Decrypt to a secure file in internal storage for memory-mapping
+                        val decryptedFile = com.example.security.ModelCryptoManager.decryptModelToCache(
+                            context,
+                            "models/silero_vad.ort.enc",
                             "silero_vad.ort"
                         )
-                        Log.i(TAG, "Successfully decrypted silero_vad.ort into secure RAM and verified SHA-256 integrity.")
+                        cachedModelPath = decryptedFile.absolutePath
+                        Log.i(TAG, "Successfully decrypted silero_vad.ort to secure cache: $cachedModelPath")
                     } catch (e: Exception) {
                         Log.e(TAG, "FATAL: Failed to load/decrypt silero_vad.ort: ${e.message}")
                         // We intentionally crash or fallback if security fails, we do not bypass!
                     }
                 }
-                return modelBytes
+                return cachedModelPath
             }
         }
     }

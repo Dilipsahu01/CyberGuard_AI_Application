@@ -2,13 +2,13 @@ package com.example.services
 
 /**
  * CyberGuardInCallService.kt
- * 
- * PURPOSE: 
+ *
+ * PURPOSE:
  * Integrates directly with the Android OS Telecom framework (`InCallService`).
- * 
+ *
  * WHY IT EXISTS:
- * This is the only way Android allows an app to physically intercept and block a live 
- * active phone call without user input. When the AI score hits 70%, this service 
+ * This is the only way Android allows an app to physically intercept and block a live
+ * active phone call without user input. When the AI score hits 70%, this service
  * executes the autonomous call termination.
  */
 import android.content.BroadcastReceiver
@@ -20,6 +20,7 @@ import android.telecom.InCallService
 import android.util.Log
 import androidx.core.content.ContextCompat
 import com.example.utils.Constants
+import kotlinx.coroutines.launch
 
 class CyberGuardInCallService : InCallService() {
     private val tag = "CyberGuardInCall"
@@ -28,7 +29,7 @@ class CyberGuardInCallService : InCallService() {
 
     companion object {
         var activeCall: Call? = null
-        
+
         fun disconnectCall() {
             activeCall?.let {
                 Log.d("CyberGuardInCall", "Requested Hangup. Disconnecting active telecom line...")
@@ -56,8 +57,8 @@ class CyberGuardInCallService : InCallService() {
         super.onCreate()
         ContextCompat.registerReceiver(
             this,
-            disconnectReceiver, 
-            IntentFilter(Constants.ACTION_DISCONNECT_CALL), 
+            disconnectReceiver,
+            IntentFilter(Constants.ACTION_DISCONNECT_CALL),
             ContextCompat.RECEIVER_NOT_EXPORTED
         )
         receiverRegistered = true
@@ -65,25 +66,45 @@ class CyberGuardInCallService : InCallService() {
 
     override fun onCallAdded(call: Call) {
         super.onCallAdded(call)
-        Log.d(tag, "onCallAdded intercepted. Transitioning state.")
+        Log.e("TELECOM_DEBUG", "onCallAdded intercepted. Transitioning state.")
         activeCall = call
 
         val handle = call.details.handle
-        val rawNumber = handle?.schemeSpecificPart ?: "Unknown Caller"
+        val rawNumber = android.net.Uri.decode(handle?.schemeSpecificPart) ?: "Unknown Caller"
+
+        // High-Speed Read Optimization: Instant threat check on a background coroutine
+        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+            try {
+                val db = com.example.models.ScamDatabase.getDatabase(applicationContext)
+                val dotScammer = db.dotScammerDao().getScammer(com.example.utils.PhoneNumberUtils.normalize(rawNumber))
+                if (dotScammer != null) {
+                    Log.e("TELECOM_DEBUG", "IMMEDIATE SCAM MATCH: Number $rawNumber found in offline Room DB! Category: ${dotScammer.threatCategory}")
+                } else {
+                    val pipeline = com.example.pipeline.PipelineSingleton.getInstance(applicationContext)
+                    val isInBloomFilter = pipeline.isScamCallerNumber(rawNumber)
+                    if (isInBloomFilter) {
+                        Log.e("TELECOM_DEBUG", "IMMEDIATE SCAM MATCH: Number $rawNumber flagged by in-memory Bloom Filter!")
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(tag, "Failed high-speed read optimization: ${e.message}")
+            }
+        }
 
         call.registerCallback(
             object : Call.Callback() {
                 override fun onStateChanged(call: Call, state: Int) {
                     super.onStateChanged(call, state)
                     Log.d(tag, "Call State Changed: $state")
-                    
+
                     when (state) {
                         Call.STATE_ACTIVE -> {
-                            Log.d(tag, "Call Answered. Booting voice recognition stream listener...")
+                            Log.e("TELECOM_DEBUG", "Call Answered. Booting voice recognition stream listener...")
                             startScamDetectionService(rawNumber)
                         }
                         Call.STATE_DISCONNECTED -> {
-                            Log.d(tag, "Call ended. Terminating speech-monitors...")
+                            Log.e("TELECOM_DEBUG", "Call ended. Terminating speech-monitors and popping UI backstack...")
+                            com.example.utils.CallStateBroadcaster.endCall()
                             stopScamDetectionService()
                         }
                     }
@@ -103,11 +124,17 @@ class CyberGuardInCallService : InCallService() {
 
     override fun onCallRemoved(call: Call) {
         super.onCallRemoved(call)
-        Log.d(tag, "onCallRemoved intercepted. Cleaning locks.")
+        Log.e("TELECOM_DEBUG", "onCallRemoved intercepted. Cleaning locks.")
         if (activeCall == call) {
             activeCall = null
         }
+        com.example.utils.CallStateBroadcaster.endCall()
         stopScamDetectionService()
+    }
+
+    override fun onCallAudioStateChanged(audioState: android.telecom.CallAudioState?) {
+        super.onCallAudioStateChanged(audioState)
+        Log.e("TELECOM_DEBUG", "onCallAudioStateChanged: $audioState")
     }
 
     private fun startScamDetectionService(number: String) {

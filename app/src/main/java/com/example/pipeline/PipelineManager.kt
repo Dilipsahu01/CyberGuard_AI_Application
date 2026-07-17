@@ -41,9 +41,7 @@ class PipelineManager(context: Context) {
     private var lastIntents = IntentScores()
     private var lastLlmRunTurn = 0
     
-    fun setSimulationScenario(isScam: Boolean) {
-        asr.setScenario(isScam)
-    }
+
 
     fun isScamCallerNumber(number: String): Boolean {
         return bloomFilter.check(number)

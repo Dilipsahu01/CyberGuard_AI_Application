@@ -45,7 +45,7 @@ class PipelineViewModel(
     var permissionStates = mutableStateMapOf<String, Boolean>()
 
     // Live AI telemetry state (synced with ScamDetectionService broadcasts)
-    var isSimulating by mutableStateOf(value = false)
+
     var activeCaller by mutableStateOf("")
     var liveScore by mutableIntStateOf(0)
     var liveTranscript by mutableStateOf("")
@@ -63,7 +63,7 @@ class PipelineViewModel(
     init {
         viewModelScope.launch {
             com.example.utils.CallStateBroadcaster.telemetryFlow.collect { update ->
-                isSimulating = true
+
                 liveScore = update.score
                 liveTranscript = update.transcript
                 liveHitKeyword = update.hitWord
@@ -85,33 +85,10 @@ class PipelineViewModel(
         checkAllPermissions()
     }
 
-    fun startMockCall(context: Context, isScam: Boolean) {
-        val simulatedNumber = if (isScam) "+91 140 900 1122" else "+91 94401 12233"
-        isSimulating = true
-        activeCaller = simulatedNumber
-        liveScore = 0
-        liveTranscript = ""
-        liveHitKeyword = ""
-        activeStage = "BOOTING"
 
-        val intent = Intent(context, ScamDetectionService::class.java).apply {
-            putExtra(Constants.EXTRA_CALLER_NUMBER, simulatedNumber)
-            putExtra("is_scam_scenario", true) // ALWAYS true for mock calls to bypass MIC check
-        }
-        try {
-            context.startService(intent)
-        } catch (e: Exception) {
-            Log.e("PipelineViewModel", "Failed to start ScamDetectionService: ${e.message}")
-        }
-    }
-
-    fun stopCall(context: Context) {
-        context.stopService(Intent(context, ScamDetectionService::class.java))
-        resetTelemetry()
-    }
 
     private fun resetTelemetry() {
-        isSimulating = false
+
         activeCaller = ""
         liveScore = 0
         liveTranscript = ""

@@ -8,12 +8,12 @@ package com.example.pipeline
 
 /**
  * IntentNLP.kt
- * 
- * PURPOSE: 
+ *
+ * PURPOSE:
  * Wraps the INT8 Quantized MiniLM-L6 neural network.
- * 
+ *
  * WHY IT EXISTS:
- * Takes the raw text from the ASR and outputs probability scores (0.0 to 1.0) 
+ * Takes the raw text from the ASR and outputs probability scores (0.0 to 1.0)
  * across 5 core psychological buckets: Urgency, Financial, Coercion, Trust, and Intimacy.
  * Runs completely locally on the edge via ONNX Runtime.
  */
@@ -40,12 +40,12 @@ class IntentNLP(context: Context) {
         "illegal" to 6166, "investigation" to 4668, "comply" to 20822,
         "secure" to 6246, "rbi" to 21708, "sbi" to 28323,
         // --- HINGLISH THREAT EXPANSION ---
-        "trai" to 15432, "department" to 4123, "fir" to 1121, "darj" to 5344, 
-        "customs" to 8273, "clearance" to 3331, "parcel" to 6652, "seize" to 7132, 
-        "bijli" to 8821, "bill" to 3312, "kyc" to 4331, "khata" to 9931, 
-        "freeze" to 2234, "qr" to 883, "scan" to 2243, "karo" to 9221, 
-        "refund" to 8312, "anydesk" to 9991, "quicksupport" to 9992, "screen" to 3341, 
-        "apk" to 5521, "download" to 4422, "link" to 8812, "teamviewer" to 9993, 
+        "trai" to 15432, "department" to 4123, "fir" to 1121, "darj" to 5344,
+        "customs" to 8273, "clearance" to 3331, "parcel" to 6652, "seize" to 7132,
+        "bijli" to 8821, "bill" to 3312, "kyc" to 4331, "khata" to 9931,
+        "freeze" to 2234, "qr" to 883, "scan" to 2243, "karo" to 9221,
+        "refund" to 8312, "anydesk" to 9991, "quicksupport" to 9992, "screen" to 3341,
+        "apk" to 5521, "download" to 4422, "link" to 8812, "teamviewer" to 9993,
         "whatsapp" to 5523, "batao" to 8213, "abhi" to 4412, "jaldi" to 9981
     )
 
@@ -61,21 +61,22 @@ class IntentNLP(context: Context) {
     init {
         try {
             env = OrtEnvironment.getEnvironment()
-            val bytes = getModelBytes(context)
-            if (bytes != null) {
+            val modelPath = getModelPath(context)
+            if (modelPath != null) {
                 try {
                     val opts = OrtSession.SessionOptions().apply {
                         addNnapi() // Enforce Hardware Acceleration Delegate
                     }
-                    session = env?.createSession(bytes, opts)
-                    Log.d(TAG, "MiniLM NLP ONNX loaded successfully via NNAPI!")
+                    // Load from path to allow memory-mapping (saves JVM heap)
+                    session = env?.createSession(modelPath, opts)
+                    Log.d(TAG, "MiniLM NLP ONNX loaded successfully via NNAPI from $modelPath")
                 } catch (e: Exception) {
                     Log.w(TAG, "NNAPI delegate failed. Safely falling back to CPU execution: ${e.message}")
-                    session = env?.createSession(bytes) // CPU Fallback
+                    session = env?.createSession(modelPath)
                 }
                 isModelLoaded = true
             } else {
-                Log.w(TAG, "MiniLM NLP ONNX bytes were null. Fallback activated.")
+                Log.w(TAG, "MiniLM NLP ONNX path was null. Fallback activated.")
             }
         } catch (e: Exception) {
             Log.w(TAG, "ONNX failed to load MiniLM. Fallback dynamic semantic analyzer active: ${e.message}")
@@ -84,25 +85,27 @@ class IntentNLP(context: Context) {
 
     companion object {
         private const val TAG = "IntentNLP"
-        @Volatile private var modelBytes: ByteArray? = null
+        @Volatile private var cachedModelPath: String? = null
         private val lock = Any()
 
-        private fun getModelBytes(context: Context): ByteArray? {
+        private fun getModelPath(context: Context): String? {
             synchronized(lock) {
-                if (modelBytes == null) {
+                if (cachedModelPath == null) {
                     try {
-                        // V1.1_Updates Section 1: Secure Runtime Pipeline (RAM-Only Decryption)
-                        val encryptedStream = context.assets.open("models/minilm_int8.ort.enc")
-                        modelBytes = com.example.security.ModelCryptoManager.decryptModelToByteArray(
-                            encryptedStream, 
+                        // V1.1_Updates Section 1: Secure Runtime Pipeline
+                        // Decrypt to a secure file in internal storage for memory-mapping
+                        val decryptedFile = com.example.security.ModelCryptoManager.decryptModelToCache(
+                            context,
+                            "models/minilm_int8.ort.enc",
                             "minilm_int8.ort"
                         )
-                        Log.i(TAG, "Successfully decrypted minilm_int8.ort into secure RAM and verified SHA-256 integrity.")
+                        cachedModelPath = decryptedFile.absolutePath
+                        Log.i(TAG, "Successfully decrypted minilm_int8.ort to secure cache: $cachedModelPath")
                     } catch (e: Exception) {
                         Log.e(TAG, "FATAL: Failed to load/decrypt minilm_int8.ort: ${e.message}")
                     }
                 }
-                return modelBytes
+                return cachedModelPath
             }
         }
     }
@@ -163,7 +166,7 @@ class IntentNLP(context: Context) {
 
         // Semantic Concept-Matching fallbacks (HINGLISH EXPANSION)
         val text = transcript.lowercase()
-        
+
         // Category 1: Urgency (expanded with Hinglish)
         val urgencyKeywords = listOf("now", "immediately", "urgent", "frozen", "blocked", "within", "mins", "hours", "hurry", "last chance", "right now", "abhi", "jaldi", "line kat jayegi", "number disconnect", "sim card block", "turant")
         val urgencyScore = calculateConceptScore(text, urgencyKeywords)
@@ -216,7 +219,7 @@ class IntentNLP(context: Context) {
         }
         val norm = kotlin.math.sqrt(sumSquares.toDouble()).toFloat()
         if (norm == 0f) return IntentScores()
-        
+
         val size = embedding.size
         val normalized = FloatArray(size)
         for (i in 0 until size) {

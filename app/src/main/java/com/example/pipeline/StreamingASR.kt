@@ -82,8 +82,7 @@ class StreamingASR(context: Context) {
         }
     }
 
-    // Ignore the demo parameter now, we are doing real inference!
-    fun setScenario(@Suppress("UNUSED_PARAMETER") isScam: Boolean) {}
+
 
     fun processChunk(audio: FloatArray): String {
         val recognizerLocal = recognizer ?: return ""

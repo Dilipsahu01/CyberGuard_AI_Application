@@ -24,12 +24,6 @@ class BloomFilter(private val bitSize: Int = 10000000, private val numHash: Int 
     init {
         synchronized(lock) {
             if (!isInitialized) {
-                // Seed standard Indian telecom scam caller samples block lists in consistent normalized 10-digit formats
-                add("1409200000") // Indian telemarketing commercial spam block
-                add("9876543210") // Test scanner scammer
-                add("8005550199") // Fraud banking spoofing simulation
-                add("1409001122") // Automated dynamic scam robo-call
-                add("1402233444") // Commercial spam campaign sample
                 isInitialized = true
             }
         }

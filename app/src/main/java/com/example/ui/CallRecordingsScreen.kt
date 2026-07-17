@@ -7,7 +7,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CallMade
+import androidx.compose.material.icons.automirrored.filled.CallMade
 import androidx.compose.material.icons.filled.PauseCircle
 import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material3.*
@@ -107,7 +107,7 @@ private fun RecordingCard(entry: RecordingEntry) {
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(
-                imageVector = Icons.Filled.CallMade,
+                imageVector = Icons.AutoMirrored.Filled.CallMade,
                 contentDescription = null,
                 tint = Gray700,
                 modifier = Modifier.size(20.dp)

@@ -10,7 +10,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.Dialpad
-import androidx.compose.material.icons.filled.List
+import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Icon
@@ -55,7 +55,7 @@ fun AppHeader(
         )
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(
-                imageVector = Icons.Filled.List,
+                imageVector = Icons.AutoMirrored.Filled.List,
                 contentDescription = "Call Logs",
                 tint = Gray800,
                 modifier = Modifier
@@ -174,7 +174,7 @@ fun ActionRow(
         VerticalDivider()
         ActionCell(secondaryLabel, secondaryIcon, Modifier.weight(1f), onSecondaryClick)
         VerticalDivider()
-        ActionCell("All Call Logs", Icons.Filled.List, Modifier.weight(1f), onAllLogsClick)
+        ActionCell("All Call Logs", Icons.AutoMirrored.Filled.List, Modifier.weight(1f), onAllLogsClick)
     }
 }
 

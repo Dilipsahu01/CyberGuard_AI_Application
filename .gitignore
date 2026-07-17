@@ -53,6 +53,7 @@ GoogleService-Info.plist
 *.pt
 *.pth
 *.enc
+*.zip
 tmp_aar/
 macrobenchmark/
 app/libs/

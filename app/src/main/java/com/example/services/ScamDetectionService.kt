@@ -47,6 +47,7 @@ import com.example.MainActivity
 import com.example.models.*
 import com.example.pipeline.*
 import com.example.security.EnvironmentGuard
+import com.example.security.DeviceHealthManager
 import com.example.database.TelemetryDatabase
 import com.example.database.TelemetryQueueItem
 import com.example.utils.Constants
@@ -585,7 +586,26 @@ class ScamDetectionService : Service() {
                                 chunkForAI.copyOfRange(i, end) // Minor edge case fallback
                             }
 
-                            lastResult = pipeline.processChunk(slice)
+                            // ADPF Thermal Check
+                            val mode = DeviceHealthManager.getOperationalMode(applicationContext)
+
+                            when (mode) {
+                                DeviceHealthManager.OperationalMode.NOMINAL -> {
+                                    // Device is cool. Run full inference.
+                                    lastResult = pipeline.processChunk(slice)
+                                }
+                                DeviceHealthManager.OperationalMode.THROTTLED -> {
+                                    Log.w("ScamDetection", "THERMAL WARNING: Shedding NLP load.")
+                                    // Skip heavy NLP processing, rely on VAD/ASR/Regex
+                                    lastResult = pipeline.processChunk(slice, skipNlp = true)
+                                }
+                                DeviceHealthManager.OperationalMode.CRITICAL -> {
+                                    Log.e("SAFETY", "Critical heat detected, AI shutdown")
+                                    pipeline.close()
+                                    _statusFlow.value = "AI_SUSPENDED"
+                                    break 
+                                }
+                            }
                         }
 
                         val inferenceTime = System.currentTimeMillis() - startTime

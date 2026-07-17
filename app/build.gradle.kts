@@ -13,12 +13,19 @@ android {
 
   defaultConfig {
     applicationId = "com.example"
-    minSdk = 26
+    minSdk = 30
     targetSdk = 35
     versionCode = 1
     versionName = "1.0"
     ndk {
       abiFilters.add("arm64-v8a")
+    }
+
+    externalNativeBuild {
+      cmake {
+        cppFlags("-std=c++17")
+        abiFilters.add("arm64-v8a")
+      }
     }
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -54,6 +61,7 @@ android {
   testOptions { unitTests { isIncludeAndroidResources = true } }
   packaging {
     jniLibs {
+      useLegacyPackaging = true
       pickFirsts.add("**/libonnxruntime.so")
       pickFirsts.add("**/libc++_shared.so")
       pickFirsts.add("**/libonnxruntime4j_jni.so")

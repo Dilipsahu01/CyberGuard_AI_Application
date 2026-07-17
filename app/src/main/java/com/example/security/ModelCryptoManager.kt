@@ -13,9 +13,9 @@ import javax.crypto.spec.SecretKeySpec
 /**
  * ModelCryptoManager.kt
  * V1.1_Updates Section 1: Android Hardware Keystore Engine
- * 
- * Securely imports the AES Master Key from the C++ layer into the physical 
- * Android Keystore (Trusted Execution Environment), and uses it to decrypt 
+ *
+ * Securely imports the AES Master Key from the C++ layer into the physical
+ * Android Keystore (Trusted Execution Environment), and uses it to decrypt
  * the AI models from assets.
  */
 object ModelCryptoManager {
@@ -45,9 +45,9 @@ object ModelCryptoManager {
                     .build()
 
                 keyStore.setEntry(KEY_ALIAS, KeyStore.SecretKeyEntry(secretKey), protection)
-                
+
                 // Scrub the raw key from RAM immediately to prevent heap dumps from reading it
-                rawKey.fill(0) 
+                rawKey.fill(0)
             }
         } catch (e: Exception) {
             // Silently ignore for JVM Unit Tests / Robolectric which do not support NDK/Hardware Keystore
@@ -66,13 +66,19 @@ object ModelCryptoManager {
 
     /**
      * Decrypts an InputStream (from assets) into an OutputStream (internal app cache)
-     * using the AES-GCM parameters prepended to the file by encrypt_models.py
+     * using a chunked streaming approach to keep JVM heap usage minimal.
      */
     fun decryptModelStream(inputStream: InputStream, outputStream: OutputStream) {
-        // Read the 12-byte IV injected by the Python script
+        // Read the 12-byte IV
         val iv = ByteArray(12)
         if (inputStream.read(iv) != 12) {
             throw SecurityException("Invalid encrypted model format: missing IV")
+        }
+
+        // Read the 16-byte Tag
+        val tag = ByteArray(16)
+        if (inputStream.read(tag) != 16) {
+            throw SecurityException("Invalid encrypted model format: missing Tag")
         }
 
         // Initialize the Cipher using the hardware key and IV
@@ -80,35 +86,33 @@ object ModelCryptoManager {
         val spec = GCMParameterSpec(GCM_TAG_LENGTH, iv)
         cipher.init(Cipher.DECRYPT_MODE, getSecretKey(), spec)
 
-        // We wrap the input stream into a CipherInputStream to decrypt on the fly.
-        // Wait, for AES-GCM, CipherInputStream requires reading the ENTIRE stream to verify the tag.
-        // The python script writes: IV (12) + Tag (16) + Ciphertext.
-        // We need to extract Tag and Ciphertext properly, or use doFinal() on the whole buffer.
-        // Since models are small (up to 150MB), we can load the ciphertext into memory to process,
-        // OR better yet, we can adjust the python script format. The standard java way is IV + Ciphertext (which includes the tag at the end).
-        
-        // Actually, Python's cipher.encrypt_and_digest(plaintext) returns (ciphertext, tag).
-        // It's much easier in Java if we append the tag to the END of the ciphertext.
-        // But since we just wrote IV + Tag + Ciphertext, let's load it into memory for simplicity,
-        // as 150MB fits in memory easily.
+        // MANDATE: True Streaming Decryption via chunked buffer (64KB)
+        val buffer = ByteArray(64 * 1024)
+        var bytesRead: Int
 
-        val tag = ByteArray(16)
-        if (inputStream.read(tag) != 16) {
-            throw SecurityException("Invalid encrypted model format: missing Tag")
+        try {
+            while (inputStream.read(buffer).also { bytesRead = it } != -1) {
+                val decrypted = cipher.update(buffer, 0, bytesRead)
+                if (decrypted != null) {
+                    outputStream.write(decrypted)
+                }
+                // MANDATE: Memory Zeroization - scrub the chunk buffer immediately
+                buffer.fill(0)
+            }
+
+            // Final block processing (verifies GCM integrity tag)
+            val finalBlock = cipher.doFinal(tag)
+            if (finalBlock != null) {
+                outputStream.write(finalBlock)
+                finalBlock.fill(0) // Zero out final block
+            }
+            outputStream.flush()
+        } finally {
+            // Ensure buffers are zeroed even on failure
+            buffer.fill(0)
+            iv.fill(0)
+            tag.fill(0)
         }
-
-        val ciphertext = inputStream.readBytes()
-        
-        // Java expects the tag to be appended to the END of the ciphertext for GCM mode
-        val combinedCiphertext = ciphertext + tag
-
-        val plaintext = cipher.doFinal(combinedCiphertext)
-        
-        outputStream.write(plaintext)
-        outputStream.flush()
-        
-        // Clear memory
-        plaintext.fill(0)
     }
 
     /**
@@ -146,29 +150,29 @@ object ModelCryptoManager {
      */
     fun decryptModelToCache(context: android.content.Context, assetPath: String, originalName: String): java.io.File {
         val encryptedAsset = "$assetPath.enc"
-        
+
         // Use context.noBackupFilesDir to prevent the unencrypted model from being synced to Google Drive
         val secureDir = java.io.File(context.noBackupFilesDir, "secure_models")
         if (!secureDir.exists()) secureDir.mkdirs()
-        
+
         val outputFile = java.io.File(secureDir, originalName)
-        
+
         // Fast-path: if already decrypted and valid, skip
         if (outputFile.exists() && ModelIntegrityVerifier.verifyFile(outputFile, originalName)) {
             return outputFile
         }
-        
+
         context.assets.open(encryptedAsset).use { input ->
             outputFile.outputStream().use { output ->
                 decryptModelStream(input, output)
             }
         }
-        
+
         if (!ModelIntegrityVerifier.verifyFile(outputFile, originalName)) {
             outputFile.delete()
             throw SecurityException("CRITICAL: SHA-256 Integrity Verification Failed for $originalName")
         }
-        
+
         return outputFile
     }
 }

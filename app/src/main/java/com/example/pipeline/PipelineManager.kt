@@ -2,14 +2,14 @@ package com.example.pipeline
 
 /**
  * PipelineManager.kt
- * 
- * PURPOSE: 
+ *
+ * PURPOSE:
  * This is the "Master Conductor" of the CyberGuard AI architecture.
  * It manages the real-time audio chunking and routes the data through the entire
  * AI pipeline (VAD -> Deepfake Check -> ASR -> NLP -> Regex -> ArcTracker -> Ensemble).
- * 
+ *
  * WHY IT EXISTS:
- * To provide a clean, unified interface for the Android Background Service. Instead of 
+ * To provide a clean, unified interface for the Android Background Service. Instead of
  * the Service managing 7 different AI models, it just calls `pipelineManager.processChunk()`.
  */
 import android.content.Context
@@ -23,7 +23,7 @@ import com.example.models.ContactMemory
 class PipelineManager(context: Context) {
     private val TAG = "PipelineManager"
     private val powerManager = context.getSystemService(Context.POWER_SERVICE) as PowerManager
-    
+
     private val bloomFilter = BloomFilter()
     val vad = SileroVAD(context)
     val asr = StreamingASR(context)
@@ -32,7 +32,7 @@ class PipelineManager(context: Context) {
     private val ensemble = EnsembleEngine()
     private val arcTracker = ArcTracker()
     var contactMemory: ContactMemory? = null
-    
+
     private var transcript = StringBuilder()
     private var turnCount = 0
     private var chunkIndex = 0
@@ -40,7 +40,7 @@ class PipelineManager(context: Context) {
     var hitWord = ""
     private var lastIntents = IntentScores()
     private var lastLlmRunTurn = 0
-    
+
 
 
     fun isScamCallerNumber(number: String): Boolean {
@@ -60,17 +60,17 @@ class PipelineManager(context: Context) {
         latestResult = processChunk(floatBuf)
     }
 
-    fun processChunk(audio: FloatArray): RiskResult {
-        Log.d(TAG, "Received float chunk of size ${audio.size}. Starting pipeline processing.")
+    fun processChunk(audio: FloatArray, skipNlp: Boolean = false): RiskResult {
+        Log.d(TAG, "Received float chunk of size ${audio.size}. Starting pipeline processing. (skipNlp=$skipNlp)")
         chunkIndex++
-        
+
         // Stage 1: VAD Speech Gating and Utterance State Tracking
         val isSpeech = vad.isSpeech(audio)
         val utteranceEnded = vad.utteranceEnded
-        
+
         // Stage 1.5: Deepfake / Robo-Voice Acoustic Detection Stub
         val isRoboVoice = detectRoboVoice(audio)
-        
+
         // Stage 2: ASR — only process audio when VAD confirms human speech is present.
         // This saves ~70% CPU by skipping the 132MB Sherpa-ONNX model during silence.
         var newText = ""
@@ -85,48 +85,55 @@ class PipelineManager(context: Context) {
                 arcTracker.update(newText)
             }
         }
-        
+
         // Stage 3: Regex keyword gate scan (on new text delta only)
         val (regexScore, matchingKeywords) = regexGate.check(newText)
         if (matchingKeywords.isNotEmpty()) {
             hitWord = matchingKeywords
         }
-        
+
         // Stage 4: Semantic Context Analysis (ADPF THERMAL API + VAD GATING)
-        
+
         // Mandate 1: Fast-Talker Exploit Check
         val isFastTalker = (turnCount - lastLlmRunTurn) >= 5
         val shouldWakeLlm = regexScore > 0 || utteranceEnded || isFastTalker
 
-        // Mandate 2: ADPF Thermal API Check
+        // Mandate 2: ADPF Thermal API Check (Dynamic Precision Scaling)
         var thermalThrottling = false
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             val headroom = powerManager.getThermalHeadroom(0)
             if (headroom >= 0.85f) {
                 thermalThrottling = true
-                Log.w(TAG, "ADPF Thermal Throttling Active (Headroom: $headroom)! Skipping NPU execution to prevent overheating.")
+                Log.w(TAG, "ADPF THERMAL CRITICAL (Headroom: $headroom)! Degrading pipeline to Regex-only mode.")
+            } else if (headroom >= 0.70f) {
+                Log.i(TAG, "ADPF THERMAL WARNING (Headroom: $headroom). Skipping non-critical IntentNLP analysis.")
+                // Set flag to skip heavy NLP but keep ASR active
             }
         }
 
-        // Only wake the LLM if conditions are met AND the phone is not burning up.
-        // During micro-cooldown periods (LLM asleep), thread yields gracefully to Android OS.
-        if (shouldWakeLlm && !thermalThrottling && newText.isNotEmpty() && transcript.isNotEmpty()) {
+        // Adaptive Orchestration: Only wake the LLM if silicon is cool enough.
+        // If headroom > 0.70, we gracefully skip IntentNLP to save battery/reduce heat.
+        val skipNLP = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            powerManager.getThermalHeadroom(0) > 0.70f
+        } else false
+
+        if (shouldWakeLlm && !thermalThrottling && !skipNLP && newText.isNotEmpty() && transcript.isNotEmpty()) {
             val slidingWindowText = getLastNWords(transcript.toString(), 100)
             lastIntents = nlp.analyze(slidingWindowText)
             lastLlmRunTurn = turnCount
         }
-        
+
         // Stage 5: Ensemble blending
         val romanceScore = contactMemory?.computeRomanceScore() ?: 0
         val baseScore = ensemble.calculate(regexScore, lastIntents, arcTracker.arcScore, romanceScore)
-        
+
         // *** BASELINE SUSPICION: same robustness as the Python web app ***
         // 5 pts per speech turn, capped at 25 pts. Ensures risk bars visibly move early on.
         val baselineSuspicion = (turnCount * 5).coerceAtMost(25)
         val finalScore = Math.min(baseScore + baselineSuspicion, 100)
-        
+
         currentScore = finalScore
-        
+
         Log.d(TAG, "Chunk #$chunkIndex | Turn: $turnCount | Base: $baseScore | Final: $finalScore | UtteranceEnded: $utteranceEnded")
 
         return RiskResult(
@@ -143,7 +150,7 @@ class PipelineManager(context: Context) {
     private fun detectRoboVoice(audio: FloatArray): Boolean {
         // Placeholder for acoustic deepfake / synthetic voice detection
         // Returns false in prototype unless activated by a simulation flag
-        return false 
+        return false
     }
 
     fun reset() {

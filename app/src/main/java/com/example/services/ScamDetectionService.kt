@@ -38,6 +38,9 @@ import android.util.Log
 import android.os.Handler
 import android.os.Looper
 import android.widget.Toast
+import com.example.database.AppDatabase
+import com.example.database.ScamCallEntity
+import com.example.database.ScamRepository
 import android.telephony.SmsManager
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
@@ -53,6 +56,7 @@ import com.example.database.TelemetryQueueItem
 import com.example.utils.Constants
 import com.example.utils.PhoneNumberUtils
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.RequestBody
 import okhttp3.Request
 import okhttp3.OkHttpClient
@@ -96,6 +100,10 @@ class ScamDetectionService : Service() {
     private var recordThread: Thread? = null
     @Volatile private var audioRecord: AudioRecord? = null
     private var currentCaller = "Unknown"
+
+    // Pre-allocated inference buffers (Memory Safety Audit)
+    private val sliceBuffer = FloatArray(512)
+    private val tempShortBuffer = ShortArray(8192)
 
     private var wakeLock: PowerManager.WakeLock? = null
     private var serviceStartTime = 0L
@@ -327,7 +335,7 @@ class ScamDetectionService : Service() {
                 )))
                 put("timestamp", System.currentTimeMillis())
             }
-            val requestBody = RequestBody.create("application/json".toMediaTypeOrNull(), payload.toString())
+            val requestBody = payload.toString().toRequestBody("application/json".toMediaTypeOrNull())
             val request = Request.Builder()
                 .url("$serverBaseUrl/api/telemetry")
                 .post(requestBody)
@@ -419,7 +427,7 @@ class ScamDetectionService : Service() {
                 put("intent_scores", org.json.JSONArray(item.intentScores))
                 put("timestamp", item.timestamp)
             }
-            val requestBody = RequestBody.create("application/json".toMediaTypeOrNull(), payload.toString())
+            val requestBody = payload.toString().toRequestBody("application/json".toMediaTypeOrNull())
             val request = Request.Builder()
                 .url("$serverBaseUrl/api/telemetry")
                 .post(requestBody)
@@ -473,7 +481,7 @@ class ScamDetectionService : Service() {
         buffer.writeIntLe(callerHash.toInt())
         buffer.writeByte(result.score)
         buffer.writeIntLe(timestampSec.toInt())
-        val requestBody = RequestBody.create("application/octet-stream".toMediaTypeOrNull(), buffer.readByteArray())
+        val requestBody = buffer.readByteArray().toRequestBody("application/octet-stream".toMediaTypeOrNull())
         val request = Request.Builder()
             .url("$serverBaseUrl/api/lora")
             .post(requestBody)
@@ -544,7 +552,6 @@ class ScamDetectionService : Service() {
 
             var currentBuffer = emptyBuffers.poll() ?: FloatArray(maxSamples)
             var currentSampleCount = 0
-            val tempShortBuffer = ShortArray(bufferSize)
 
             Log.d("AudioLoop", "Starting 3-second Fixed-Window Recording Loop with Zero-Alloc Queue")
             try {
@@ -563,9 +570,9 @@ class ScamDetectionService : Service() {
             // --- 2. CONSUMER COROUTINE (Dispatchers.Default) ---
             serviceScope.launch(Dispatchers.Default) {
                 val sliceSize = 512
-                val sliceBuffer = FloatArray(sliceSize) // Allocate ONCE
 
-                for (chunkForAI in readyQueue) {
+                try {
+                    for (chunkForAI in readyQueue) {
                     if (!isRecording) break
 
                     Log.e("AI_ENGINE", "INFERENCE_TRAP: Incoming buffer detected. Starting Whisper/ONNX processing...")
@@ -583,7 +590,10 @@ class ScamDetectionService : Service() {
                                 System.arraycopy(chunkForAI, i, sliceBuffer, 0, sliceSize)
                                 sliceBuffer
                             } else {
-                                chunkForAI.copyOfRange(i, end) // Minor edge case fallback
+                                // Zero-allocation padded copy rather than copyOfRange
+                                sliceBuffer.fill(0f)
+                                System.arraycopy(chunkForAI, i, sliceBuffer, 0, length)
+                                sliceBuffer
                             }
 
                             // ADPF Thermal Check
@@ -601,7 +611,7 @@ class ScamDetectionService : Service() {
                                 }
                                 DeviceHealthManager.OperationalMode.CRITICAL -> {
                                     Log.e("SAFETY", "Critical heat detected, AI shutdown")
-                                    pipeline.close()
+                                    // Break out to finally block to handle closure
                                     _statusFlow.value = "AI_SUSPENDED"
                                     break 
                                 }
@@ -616,6 +626,11 @@ class ScamDetectionService : Service() {
                         if (result != null) {
                             _scoreFlow.value = result.score
                             _transcriptFlow.value = result.transcript
+                            
+                            // Initialize DB Singleton lazily or use a pre-initialized one
+                            val appDb = AppDatabase.getDatabase(applicationContext)
+                            val scamRepo = ScamRepository.getInstance(appDb)
+                            
                             when {
                                 result.isRoboVoice -> broadcastRoboWarning()
                                 result.score >= 70 -> {
@@ -626,6 +641,19 @@ class ScamDetectionService : Service() {
                                 isWhitelisted(currentCaller) -> { /* whitelisted */ }
                                 else -> if (result.score > 40) broadcastRiskUpdate(result)
                             }
+                            
+                            // Database Write (Fire-and-forget in IO)
+                            if (result.score >= 40) {
+                                serviceScope.launch(Dispatchers.IO) {
+                                    scamRepo.insertScam(
+                                        ScamCallEntity(
+                                            phoneNumber = currentCaller,
+                                            threatScore = result.score.toFloat(),
+                                            isFlagged = result.score >= 70
+                                        )
+                                    )
+                                }
+                            }
                         }
                     } else {
                         Log.e("AudioLoop", "PipelineManager became null during processing!")
@@ -633,6 +661,9 @@ class ScamDetectionService : Service() {
 
                     // Return the processed buffer to the object pool to stop GC Thrashing
                     emptyBuffers.offer(chunkForAI)
+                }
+                } finally {
+                    pipelineManager?.close()
                 }
             }
 
@@ -696,7 +727,8 @@ class ScamDetectionService : Service() {
         // In IncomingCallActivity, this will turn the screen light red and play an audio warning
     }
 
-    private fun dispatchGuardianAlert(scammerNumber: String) {
+    @androidx.annotation.VisibleForTesting(otherwise = androidx.annotation.VisibleForTesting.PRIVATE)
+    internal fun dispatchGuardianAlert(targetNumber: String) {
         val settingsPrefs = getSharedPreferences("cyberguard_settings", MODE_PRIVATE)
         // If Guardian Protection is configured, send the background SMS alert
         val guardianNumber = settingsPrefs.getString("guardian_number", null)
@@ -708,7 +740,7 @@ class ScamDetectionService : Service() {
                     @Suppress("DEPRECATION")
                     SmsManager.getDefault()
                 }
-                val message = "[CyberGuard Alert] A high-risk scam call from $scammerNumber was just intercepted on this device."
+                val message = "[CyberGuard Alert] A high-risk scam call from $targetNumber was just intercepted on this device."
                 smsManager.sendTextMessage(guardianNumber, null, message, null, null)
                 Log.i(tag, "Guardian Alert SMS dispatched to $guardianNumber")
             } catch (e: Exception) {

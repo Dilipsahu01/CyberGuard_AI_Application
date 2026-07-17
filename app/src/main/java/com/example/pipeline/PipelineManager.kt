@@ -51,13 +51,14 @@ class PipelineManager(context: Context) {
 
     fun getLatestResult(): RiskResult? = latestResult
 
+    private val floatBuf = FloatArray(8192) // Class-level pre-allocated buffer
+
     fun processAudioChunk(chunk: ShortArray) {
-        Log.d(TAG, "Received chunk of size ${chunk.size}")
-        val floatBuf = FloatArray(chunk.size)
-        for (i in chunk.indices) {
+        val size = chunk.size
+        for (i in 0 until size) {
             floatBuf[i] = chunk[i] / 32768f
         }
-        latestResult = processChunk(floatBuf)
+        latestResult = processChunk(floatBuf.copyOf(size)) // We can further optimize by passing size to processChunk if we change its signature
     }
 
     fun processChunk(audio: FloatArray, skipNlp: Boolean = false): RiskResult {

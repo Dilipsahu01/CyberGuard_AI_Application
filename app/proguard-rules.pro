@@ -33,3 +33,7 @@
 -keep class com.example.models.** { *; }
 -keep class com.squareup.moshi.** { *; }
 -keep interface com.squareup.moshi.** { *; }
+
+# Prevent R8 from modifying Compose Snapshot locks to stop Lock Verification errors
+-keepclassmembers class androidx.compose.runtime.snapshots.Snapshot { *; }
+-dontwarn androidx.compose.runtime.snapshots.**

@@ -126,7 +126,12 @@ class IntentNLP(context: Context) {
 
                 // input_ids [1, seqLen]
                 val idsShape = longArrayOf(1, seqLen)
-                val idsBuffer = LongBuffer.wrap(tokens.map { it.toLong() }.toLongArray())
+                // Pre-allocated LongArray to avoid Collection boxing (.map { ... })
+                val rawLongs = LongArray(tokens.size)
+                for (i in tokens.indices) {
+                    rawLongs[i] = tokens[i].toLong()
+                }
+                val idsBuffer = LongBuffer.wrap(rawLongs)
                 val idsTensor = OnnxTensor.createTensor(envLocal, idsBuffer, idsShape)
 
                 // attention_mask [1, seqLen]
@@ -249,15 +254,20 @@ class IntentNLP(context: Context) {
     private val cleanRegex = Regex("[^a-zA-Z0-9]+")
 
     private fun tokenize(text: String): IntArray {
-        val words = text.lowercase().split(cleanRegex).filter { it.isNotEmpty() }
-        val list = mutableListOf<Int>()
-        list.add(101) // [CLS]
-        for (word in words) {
-            val token = wordMap[word] ?: 100 // Fallback to [UNK]
-            list.add(token)
+        val words = text.lowercase().split(cleanRegex)
+        // Zero-allocation indexing over primitive array
+        val result = IntArray(words.size + 2)
+        result[0] = 101 // [CLS]
+        var idx = 1
+        for (i in words.indices) {
+            val word = words[i]
+            if (word.isNotEmpty()) {
+                result[idx++] = wordMap[word] ?: 100 // [UNK]
+            }
         }
-        list.add(102) // [SEP]
-        return list.toIntArray()
+        result[idx] = 102 // [SEP]
+        
+        return if (idx + 1 == result.size) result else result.copyOfRange(0, idx + 1)
     }
 
     fun close() {

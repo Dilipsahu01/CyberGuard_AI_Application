@@ -126,6 +126,7 @@ class IncomingCallActivity : ComponentActivity() {
         }
     }
 
+    @Suppress("DEPRECATION")
     private fun vibrateAlert() {
         val vibrator = getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {

@@ -7,8 +7,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Call
-import androidx.compose.material.icons.filled.CallMade
-import androidx.compose.material.icons.filled.CallReceived
+import androidx.compose.material.icons.automirrored.filled.CallMade
+import androidx.compose.material.icons.automirrored.filled.CallReceived
 import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.PhoneDisabled
 import androidx.compose.material3.*
@@ -132,8 +132,8 @@ fun CallLogsScreen(
 @Composable
 private fun CallLogCard(entry: CallLogEntry) {
     val (icon, tint) = when (entry.direction) {
-        CallDirection.OUTGOING -> Icons.Filled.CallMade to Gray700
-        CallDirection.INCOMING -> Icons.Filled.CallReceived to Gray700
+        CallDirection.OUTGOING -> Icons.AutoMirrored.Filled.CallMade to Gray700
+        CallDirection.INCOMING -> Icons.AutoMirrored.Filled.CallReceived to Gray700
         CallDirection.MISSED -> Icons.Filled.PhoneDisabled to RedEndCall
     }
 

@@ -21,6 +21,10 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -73,10 +77,13 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         
         // V1.1_Updates Section 3: The Tripwire
-        if (EnvironmentGuard.isDeviceCompromised()) {
-            Toast.makeText(this, "SECURITY ALERT: Compromised/Rooted Environment Detected. Shutting down to protect AI Models.", Toast.LENGTH_LONG).show()
-            finishAffinity()
-            return
+        lifecycleScope.launch(Dispatchers.IO) {
+            if (EnvironmentGuard.isDeviceCompromised()) {
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(this@MainActivity, "SECURITY ALERT: Compromised/Rooted Environment Detected. Shutting down to protect AI Models.", Toast.LENGTH_LONG).show()
+                    finishAffinity()
+                }
+            }
         }
 
         enableEdgeToEdge()

@@ -15,12 +15,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bluetooth
 import androidx.compose.material.icons.filled.CallEnd
-import androidx.compose.material.icons.filled.CallMade
+import androidx.compose.material.icons.automirrored.filled.CallMade
 import androidx.compose.material.icons.filled.ClosedCaption
 import androidx.compose.material.icons.filled.EditNote
 import androidx.compose.material.icons.filled.MicOff
 import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.VolumeUp
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.Dialpad
 import androidx.compose.material.icons.filled.Add
@@ -83,7 +83,7 @@ fun ActiveCallScreen(
             // ---- Call duration pill ----
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
-                    imageVector = Icons.Filled.CallMade,
+                    imageVector = Icons.AutoMirrored.Filled.CallMade,
                     contentDescription = null,
                     tint = Gray500,
                     modifier = Modifier.size(16.dp)
@@ -193,7 +193,7 @@ fun ActiveCallScreen(
                     ) {
                         CallControlButton(Icons.Filled.MicOff, "Mute", isActive = isMuted) { isMuted = !isMuted }
                         CallControlButton(Icons.Filled.Dialpad, "Keypad", isActive = showKeypad) { showKeypad = !showKeypad }
-                        CallControlButton(Icons.Filled.VolumeUp, "Speaker", isActive = isSpeakerOn) { isSpeakerOn = !isSpeakerOn }
+                        CallControlButton(Icons.AutoMirrored.Filled.VolumeUp, "Speaker", isActive = isSpeakerOn) { isSpeakerOn = !isSpeakerOn }
                     }
                     Row(
                         modifier = Modifier.width(280.dp),

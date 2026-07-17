@@ -84,11 +84,8 @@ class GuardianAlertResilienceTest {
             // For a true L-Max test, we would feed audio to the AudioRecord mock and let the 
             // Coroutine loop pull it. We simulate the final call:
             
-            val dispatchMethod = ScamDetectionService::class.java.getDeclaredMethod("dispatchGuardianAlert", String::class.java)
-            dispatchMethod.isAccessible = true
-            
             if (score >= 70) {
-                dispatchMethod.invoke(service, "+15559999")
+                service.dispatchGuardianAlert("+15559999")
             }
         }
 
@@ -117,11 +114,8 @@ class GuardianAlertResilienceTest {
             mockSmsManager.sendTextMessage(any(), any(), any(), any(), any()) 
         } throws SecurityException("Permission Denial: requires android.permission.SEND_SMS")
 
-        val dispatchMethod = ScamDetectionService::class.java.getDeclaredMethod("dispatchGuardianAlert", String::class.java)
-        dispatchMethod.isAccessible = true
-
         // This should NOT crash the app. It should catch the exception gracefully.
-        dispatchMethod.invoke(service, "+15559999")
+        service.dispatchGuardianAlert("+15559999")
         
         // If we reach here, the app didn't crash.
         verify(exactly = 1) { 

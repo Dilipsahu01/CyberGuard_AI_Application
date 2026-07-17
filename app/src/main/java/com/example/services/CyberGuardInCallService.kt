@@ -29,6 +29,7 @@ class CyberGuardInCallService : InCallService() {
 
     companion object {
         var activeCall: Call? = null
+        var instance: CyberGuardInCallService? = null
 
         fun disconnectCall() {
             activeCall?.let {
@@ -43,6 +44,17 @@ class CyberGuardInCallService : InCallService() {
                 it.answer(android.telecom.VideoProfile.STATE_AUDIO_ONLY)
             }
         }
+
+        fun holdCall(hold: Boolean) {
+            activeCall?.let {
+                if (hold) it.hold() else it.unhold()
+            }
+        }
+
+        @Suppress("DEPRECATION")
+        fun setAudioRoute(route: Int) {
+            instance?.setAudioRoute(route)
+        }
     }
 
     private val disconnectReceiver = object : BroadcastReceiver() {
@@ -55,6 +67,7 @@ class CyberGuardInCallService : InCallService() {
 
     override fun onCreate() {
         super.onCreate()
+        instance = this
         ContextCompat.registerReceiver(
             this,
             disconnectReceiver,
@@ -132,6 +145,8 @@ class CyberGuardInCallService : InCallService() {
         stopScamDetectionService()
     }
 
+    @Suppress("DEPRECATION")
+    @Deprecated("Deprecated in Telecom API 34")
     override fun onCallAudioStateChanged(audioState: android.telecom.CallAudioState?) {
         super.onCallAudioStateChanged(audioState)
         Log.e("TELECOM_DEBUG", "onCallAudioStateChanged: $audioState")
@@ -163,6 +178,7 @@ class CyberGuardInCallService : InCallService() {
             receiverRegistered = false
         }
         activeCall = null
+        instance = null
         super.onDestroy()
     }
 }

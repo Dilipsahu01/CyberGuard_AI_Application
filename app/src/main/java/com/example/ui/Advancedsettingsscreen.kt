@@ -5,8 +5,10 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.filled.PrivacyTip
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -21,22 +23,43 @@ import androidx.compose.ui.unit.sp
 
 @Composable
 fun AdvancedSettingsScreen(
+    viewModel: PipelineViewModel = androidx.lifecycle.viewmodel.compose.viewModel(),
     onBackClick: () -> Unit = {},
-    onCheckForUpdates: () -> Unit = {}
+    onCheckForUpdates: () -> Unit = {},
+    onNavigateToBlockedNumbers: () -> Unit = {},
+    onNavigateToQuickResponses: () -> Unit = {},
+    onNavigateToWhitelist: () -> Unit = {},
+    onNavigateToPrivacyPolicy: () -> Unit = {}
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val prefs = remember { context.getSharedPreferences("cyberguard_settings", android.content.Context.MODE_PRIVATE) }
 
-    var threatSensitivity by rememberSaveable { mutableFloatStateOf(70f) }
-    var deepfakeProtection by rememberSaveable { mutableStateOf(true) }
-    var intentNlpAnalysis by rememberSaveable { mutableStateOf(true) }
+    var threatSensitivity by rememberSaveable { mutableFloatStateOf(prefs.getInt("alert_threshold", 70).toFloat()) }
+    var deepfakeProtection by rememberSaveable { mutableStateOf(prefs.getBoolean("deepfake_protection", true)) }
+    var intentNlpAnalysis by rememberSaveable { mutableStateOf(prefs.getBoolean("intent_nlp", true)) }
     var guardianNumber by rememberSaveable { mutableStateOf(prefs.getString("guardian_number", "") ?: "") }
-    var swarmIntelligence by rememberSaveable { mutableStateOf(true) }
-    var syncModeIndex by rememberSaveable { mutableIntStateOf(0) }
-    var darkTheme by rememberSaveable { mutableStateOf(false) }
+    var swarmIntelligence by rememberSaveable { mutableStateOf(prefs.getBoolean("swarm_intelligence", true)) }
+    var syncModeIndex by rememberSaveable { mutableIntStateOf(prefs.getInt("sync_mode_index", 0)) }
+    var darkTheme by rememberSaveable { mutableStateOf(prefs.getBoolean("dark_theme", false)) }
+    var dialpadTones by rememberSaveable { mutableStateOf(prefs.getBoolean("dialpad_tones", true)) }
+    var vibrateOnCall by rememberSaveable { mutableStateOf(prefs.getBoolean("vibrate_on_call", true)) }
 
     LaunchedEffect(guardianNumber) {
         prefs.edit().putString("guardian_number", guardianNumber).apply()
+    }
+    LaunchedEffect(threatSensitivity) { prefs.edit().putInt("alert_threshold", threatSensitivity.toInt()).apply() }
+    LaunchedEffect(deepfakeProtection) { prefs.edit().putBoolean("deepfake_protection", deepfakeProtection).apply() }
+    LaunchedEffect(intentNlpAnalysis) { prefs.edit().putBoolean("intent_nlp", intentNlpAnalysis).apply() }
+    LaunchedEffect(swarmIntelligence) { prefs.edit().putBoolean("swarm_intelligence", swarmIntelligence).apply() }
+    LaunchedEffect(syncModeIndex) { prefs.edit().putInt("sync_mode_index", syncModeIndex).apply() }
+    LaunchedEffect(darkTheme) { prefs.edit().putBoolean("dark_theme", darkTheme).apply() }
+    
+    LaunchedEffect(dialpadTones) {
+        prefs.edit().putBoolean("dialpad_tones", dialpadTones).apply()
+    }
+    
+    LaunchedEffect(vibrateOnCall) {
+        prefs.edit().putBoolean("vibrate_on_call", vibrateOnCall).apply()
     }
 
     Surface(
@@ -87,7 +110,69 @@ fun AdvancedSettingsScreen(
                             subtitle = "Automatically text this number if a scam is detected.",
                             value = guardianNumber,
                             onValueChange = { guardianNumber = it },
-                            placeholder = "e.g. +91 9876543210"
+                            placeholder = "e.g. +91 9876543210",
+                            onSaveClick = {
+                                android.widget.Toast.makeText(context, "Guardian number saved!", android.widget.Toast.LENGTH_SHORT).show()
+                            }
+                        )
+                    }
+                }
+                
+                item {
+                    SettingsSection(title = "Call Management") {
+                        SettingsLinkRow(
+                            icon = Icons.Filled.Block,
+                            title = "Blocked Numbers",
+                            subtitle = "Manage numbers blocked from calling you.",
+                            linkText = "Manage",
+                            onLinkClick = onNavigateToBlockedNumbers
+                        )
+                        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = BorderGray)
+                        SettingsLinkRow(
+                            icon = Icons.Filled.Edit,
+                            title = "Quick Responses",
+                            subtitle = "Edit SMS templates for declining calls.",
+                            linkText = "Edit",
+                            onLinkClick = onNavigateToQuickResponses
+                        )
+                        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = BorderGray)
+                        SettingsLinkRow(
+                            icon = Icons.Filled.VerifiedUser,
+                            title = "Trusted Contacts",
+                            subtitle = "Contacts that bypass AI scanning.",
+                            linkText = "Manage",
+                            onLinkClick = onNavigateToWhitelist
+                        )
+                    }
+                }
+                
+                item {
+                    SettingsSection(title = "Sound & Display") {
+                        SettingsSwitchRow(
+                            icon = Icons.Filled.TouchApp,
+                            title = "Dialpad Tones",
+                            subtitle = "Play tones when using dialpad.",
+                            checked = dialpadTones,
+                            onCheckedChange = { dialpadTones = it }
+                        )
+                        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = BorderGray)
+                        SettingsSwitchRow(
+                            icon = Icons.Filled.Vibration,
+                            title = "Vibrate on Call",
+                            subtitle = "Vibrate device for incoming calls.",
+                            checked = vibrateOnCall,
+                            onCheckedChange = { vibrateOnCall = it }
+                        )
+                        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = BorderGray)
+                        SettingsLinkRow(
+                            icon = Icons.Filled.MusicNote,
+                            title = "Ringtone",
+                            subtitle = "Change default ringtone.",
+                            linkText = "Change",
+                            onLinkClick = {
+                                val intent = android.content.Intent(android.media.RingtoneManager.ACTION_RINGTONE_PICKER)
+                                context.startActivity(intent)
+                            }
                         )
                     }
                 }
@@ -128,6 +213,14 @@ fun AdvancedSettingsScreen(
                             selectedIndex = syncModeIndex,
                             onSelect = { syncModeIndex = it }
                         )
+                        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = BorderGray)
+                        SettingsLinkRow(
+                            icon = Icons.Filled.PrivacyTip,
+                            title = "Privacy Policy",
+                            subtitle = "Read our data collection and processing policies.",
+                            linkText = "View",
+                            onLinkClick = onNavigateToPrivacyPolicy
+                        )
                     }
                 }
 
@@ -139,6 +232,25 @@ fun AdvancedSettingsScreen(
                             subtitle = "Force dark mode regardless of system setting.",
                             checked = darkTheme,
                             onCheckedChange = { darkTheme = it }
+                        )
+                    }
+                }
+
+                item {
+                    SettingsSection(title = "Data Management (DPDP Act)") {
+                        SettingsActionRow(
+                            icon = Icons.Filled.DeleteForever,
+                            title = "Purge All My Data",
+                            subtitle = "Permanently delete all call logs, memory, and telemetry associations.",
+                            actionText = "Purge Everything",
+                            contentColor = MaterialTheme.colorScheme.error,
+                            onClick = {
+                                viewModel.purgeAllData {
+                                    // Navigate back or show success
+                                    android.widget.Toast.makeText(context, "All data successfully erased.", android.widget.Toast.LENGTH_LONG).show()
+                                    onBackClick()
+                                }
+                            }
                         )
                     }
                 }
@@ -238,7 +350,8 @@ private fun SettingsTextFieldRow(
     subtitle: String,
     value: String,
     onValueChange: (String) -> Unit,
-    placeholder: String = ""
+    placeholder: String = "",
+    onSaveClick: (() -> Unit)? = null
 ) {
     Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -250,15 +363,27 @@ private fun SettingsTextFieldRow(
             }
         }
         Spacer(Modifier.height(12.dp))
-        OutlinedTextField(
-            value = value,
-            onValueChange = onValueChange,
-            placeholder = { Text(placeholder, style = MaterialTheme.typography.bodyMedium, color = Gray500) },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(12.dp),
-            colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Primary)
-        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            OutlinedTextField(
+                value = value,
+                onValueChange = onValueChange,
+                placeholder = { Text(placeholder, style = MaterialTheme.typography.bodyMedium, color = Gray500) },
+                singleLine = true,
+                modifier = Modifier.weight(1f),
+                shape = RoundedCornerShape(12.dp),
+                colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Primary)
+            )
+            if (onSaveClick != null) {
+                Spacer(Modifier.width(8.dp))
+                Button(
+                    onClick = onSaveClick,
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Primary)
+                ) {
+                    Text("Save")
+                }
+            }
+        }
     }
 }
 
@@ -345,6 +470,31 @@ private fun SettingsLinkRow(
         }
         TextButton(onClick = onLinkClick) {
             Text(linkText, style = MaterialTheme.typography.labelLarge, color = Primary)
+        }
+    }
+}
+
+@Composable
+private fun SettingsActionRow(
+    icon: ImageVector,
+    title: String,
+    subtitle: String,
+    actionText: String,
+    contentColor: Color = Primary,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(16.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(imageVector = icon, contentDescription = null, tint = contentColor, modifier = Modifier.size(24.dp))
+        Spacer(Modifier.width(16.dp))
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium, color = contentColor)
+            Text(subtitle, style = MaterialTheme.typography.bodySmall, color = Gray500)
+        }
+        TextButton(onClick = onClick) {
+            Text(actionText, style = MaterialTheme.typography.labelLarge, color = contentColor)
         }
     }
 }

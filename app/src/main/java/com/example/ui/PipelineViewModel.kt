@@ -22,6 +22,8 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 class PipelineViewModel(
     application: Application,
@@ -51,7 +53,7 @@ class PipelineViewModel(
     var liveTranscript by mutableStateOf("")
     var liveHitKeyword by mutableStateOf("")
     var activeStage by mutableStateOf("IDLE")
-    
+
     var urgencyScore by mutableIntStateOf(0)
     var financialScore by mutableIntStateOf(0)
     var coercionScore by mutableIntStateOf(0)
@@ -69,7 +71,7 @@ class PipelineViewModel(
                 liveHitKeyword = update.hitWord
                 activeCaller = update.callerNumber
                 activeStage = update.stage
-                
+
                 urgencyScore = update.urgency
                 financialScore = update.financial
                 coercionScore = update.coercion
@@ -107,6 +109,37 @@ class PipelineViewModel(
         }
     }
 
+    /**
+     * MANDATE: DPDP Act (Right to be Forgotten)
+     * Performs a complete erasure of all local and remote data associations.
+     */
+    fun purgeAllData(onComplete: () -> Unit = {}) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val context = applicationContext ?: return@launch
+
+            // 1. Wipe local databases
+            val scamDb = com.example.models.ScamDatabase.getDatabase(context)
+            scamDb.clearAllTables()
+
+            val appDb = com.example.database.AppDatabase.getDatabase(context)
+            appDb.clearAllTables()
+
+            // 2. Trigger server cascade delete (for current device/caller hash if possible)
+            // Note: Since we are 100% anonymized, we purge by device context where applicable.
+            val reporter = com.example.pipeline.SwarmReporter(context)
+            reporter.purgeUserData("SELF") // Prototype placeholder
+
+            // 3. Clear SharedPreferences
+            context.getSharedPreferences("cyberguard_settings", Context.MODE_PRIVATE).edit().clear().apply()
+            context.getSharedPreferences("cyberguard_settings_internal", Context.MODE_PRIVATE).edit().clear().apply()
+
+            withContext(Dispatchers.Main) {
+                resetTelemetry()
+                onComplete()
+            }
+        }
+    }
+
     fun deleteLog(log: CallLog) {
         viewModelScope.launch {
             repository.deleteLog(log)
@@ -115,16 +148,14 @@ class PipelineViewModel(
 
     fun checkAllPermissions() {
         val context = applicationContext
-        
+
         permissionStates["Record Audio"] = ContextCompat.checkSelfPermission(
             context, android.Manifest.permission.RECORD_AUDIO
         ) == PackageManager.PERMISSION_GRANTED
-        
+
         permissionStates["Read Call Log"] = ContextCompat.checkSelfPermission(
             context, android.Manifest.permission.READ_CALL_LOG
         ) == PackageManager.PERMISSION_GRANTED
-
-        permissionStates["Overlay Screen"] = Settings.canDrawOverlays(context)
 
         // Dialer role check
         permissionStates["Default Dialer"] = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {

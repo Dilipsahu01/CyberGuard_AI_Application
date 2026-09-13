@@ -35,7 +35,11 @@ fun DashboardScreen(
     viewModel: PipelineViewModel? = null,
     onNavigateToDialer: () -> Unit = {},
     onNavigateToSettings: () -> Unit = {},
-    onNavigateToLogs: () -> Unit = {}
+    onNavigateToLogs: () -> Unit = {},
+    onNavigateToContacts: () -> Unit = {},
+    onNavigateToScamHistory: () -> Unit = {},
+    onNavigateToFavorites: () -> Unit = {},
+    onNavigateToVoicemail: () -> Unit = {}
 ) {
     val scamLogs by viewModel?.scamLogs?.collectAsState(initial = emptyList()) ?: remember { mutableStateOf(emptyList()) }
 
@@ -53,7 +57,10 @@ fun DashboardScreen(
                 // Shared App Header (from Components.kt)
                 AppHeader(
                     onSettingsClick = onNavigateToSettings,
-                    onLogsClick = onNavigateToLogs
+                    onLogsClick = onNavigateToLogs,
+                    onContactsClick = onNavigateToContacts,
+                    onFavoritesClick = onNavigateToFavorites,
+                    onVoicemailClick = onNavigateToVoicemail
                 )
 
                 Spacer(Modifier.height(24.dp))
@@ -88,6 +95,14 @@ fun DashboardScreen(
                         ThreatProgressRow(label = "Tech Support Scam", percentage = 0.20f, count = "5", color = Primary)
                         Spacer(Modifier.height(20.dp))
                         ThreatProgressRow(label = "Romance / Trust", percentage = 0.15f, count = "4", color = Gray500)
+                        
+                        Spacer(Modifier.height(16.dp))
+                        TextButton(
+                            onClick = onNavigateToScamHistory,
+                            modifier = Modifier.align(Alignment.CenterHorizontally)
+                        ) {
+                            Text("View Full History", color = Primary)
+                        }
                     }
                 }
 
@@ -131,7 +146,8 @@ private fun SwarmActiveBadge() {
                 modifier = Modifier
                     .size(10.dp)
                     .clip(CircleShape)
-                    .background(SwarmGreen.copy(alpha = alpha))
+                    .graphicsLayer { this.alpha = alpha }
+                    .background(SwarmGreen)
             )
             Spacer(Modifier.width(12.dp))
             Text(

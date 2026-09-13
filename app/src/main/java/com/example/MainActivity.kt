@@ -75,52 +75,72 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        
-        // V1.1_Updates Section 3: The Tripwire
-        lifecycleScope.launch(Dispatchers.IO) {
-            if (EnvironmentGuard.isDeviceCompromised()) {
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(this@MainActivity, "SECURITY ALERT: Compromised/Rooted Environment Detected. Shutting down to protect AI Models.", Toast.LENGTH_LONG).show()
-                    finishAffinity()
-                }
-            }
-        }
-
         enableEdgeToEdge()
-
         val factory = PipelineViewModelFactory(application)
 
         setContent {
             MyApplicationTheme {
                 val viewModel: PipelineViewModel = viewModel(factory = factory)
-                var bypassOnboarding by remember { mutableStateOf(false) }
+                var isCompromised by remember { mutableStateOf(false) }
+                var appReady by remember { mutableStateOf(false) }
                 
-                // Refresh permissions state every time the app resumes
-                val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
-                DisposableEffect(lifecycleOwner) {
-                    val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
-                        if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
-                            viewModel.checkAllPermissions()
+                LaunchedEffect(Unit) {
+                     withContext(Dispatchers.IO) {
+                         isCompromised = EnvironmentGuard.isDeviceCompromised()
+                     }
+                }
+                
+                if (isCompromised) {
+                    Surface(color = Color(0xFFFEE2E2), modifier = Modifier.fillMaxSize()) {
+                        Column(
+                            modifier = Modifier.fillMaxSize().padding(24.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
+                        ) {
+                            Icon(Icons.Filled.Warning, contentDescription = null, tint = Color(0xFFEF4444), modifier = Modifier.size(64.dp))
+                            Spacer(Modifier.height(16.dp))
+                            Text("SYSTEM COMPROMISED", color = Color(0xFFEF4444), fontSize = 24.sp, fontWeight = FontWeight.Black)
+                            Spacer(Modifier.height(8.dp))
+                            Text("The application detected unusual behaviour or malware in the device. We can't load the CyberGuard AI.", color = Color(0xFFEF4444), fontSize = 16.sp, textAlign = TextAlign.Center, fontWeight = FontWeight.SemiBold)
                         }
                     }
-                    lifecycleOwner.lifecycle.addObserver(observer)
-                    onDispose {
-                        lifecycleOwner.lifecycle.removeObserver(observer)
-                    }
-                }
-
-                // If any permissions are false or the state map is empty (initializing), show the onboarding screen
-                val needsPermissions = viewModel.permissionStates.isEmpty() || viewModel.permissionStates.values.any { !it }
-                
-                if (needsPermissions && !bypassOnboarding) {
-                    com.example.ui.PermissionsOnboardingScreen(
-                        onGrantPermissions = {
-                            viewModel.checkAllPermissions()
-                        },
-                        onSkip = { bypassOnboarding = true }
-                    )
+                } else if (!appReady) {
+                    com.example.ui.SplashScreen(onAppReady = { appReady = true })
                 } else {
-                    AppNavigation(viewModel)
+                    // Refresh permissions state every time the app resumes
+                    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+                    DisposableEffect(lifecycleOwner) {
+                        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+                            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                                viewModel.checkAllPermissions()
+                            }
+                        }
+                        lifecycleOwner.lifecycle.addObserver(observer)
+                        onDispose {
+                            lifecycleOwner.lifecycle.removeObserver(observer)
+                        }
+                    }
+
+                    // If any permissions are false or the state map is empty (initializing), show the onboarding screen
+                    val needsPermissions = viewModel.permissionStates.isEmpty() || viewModel.permissionStates.values.any { !it }
+                    
+                    if (needsPermissions) {
+                        com.example.ui.PermissionsOnboardingScreen(
+                            onGrantPermissions = {
+                                viewModel.checkAllPermissions()
+                            }
+                        )
+                    } else {
+                        val initialRoute = if (intent.hasExtra("EXTRA_SCAM_NUMBER")) {
+                            val num = intent.getStringExtra("EXTRA_SCAM_NUMBER") ?: ""
+                            "post_call_review/${android.net.Uri.encode(num)}"
+                        } else {
+                            "dashboard"
+                        }
+                        Box(modifier = Modifier.fillMaxSize().systemBarsPadding()) {
+                            AppNavigation(viewModel, startDestination = initialRoute)
+                        }
+                    }
                 }
             }
         }

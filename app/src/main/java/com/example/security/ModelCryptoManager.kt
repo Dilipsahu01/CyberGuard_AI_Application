@@ -23,6 +23,7 @@ object ModelCryptoManager {
     private const val ANDROID_KEYSTORE = "AndroidKeyStore"
     private const val TRANSFORMATION = "AES/GCM/NoPadding"
     private const val GCM_TAG_LENGTH = 128 // 16 bytes
+    private const val TAG = "ModelCryptoManager"
 
     init {
         importKeyToKeystore()
@@ -35,7 +36,8 @@ object ModelCryptoManager {
 
             // Only import if not already locked in hardware
             if (!keyStore.containsAlias(KEY_ALIAS)) {
-                val rawKey = NativeSecrets.getModelMasterKey()
+                val salt = ByteArray(0)
+                val rawKey = NativeSecrets.getModelMasterKey(salt)
                 val secretKey = SecretKeySpec(rawKey, KeyProperties.KEY_ALGORITHM_AES)
 
                 val protection = KeyProtection.Builder(KeyProperties.PURPOSE_DECRYPT)
@@ -48,19 +50,29 @@ object ModelCryptoManager {
 
                 // Scrub the raw key from RAM immediately to prevent heap dumps from reading it
                 rawKey.fill(0)
+                android.util.Log.i(TAG, "Master key successfully imported into hardware Keystore.")
             }
-        } catch (e: Exception) {
-            // Silently ignore for JVM Unit Tests / Robolectric which do not support NDK/Hardware Keystore
-            println("ModelCryptoManager: Hardware Keystore / NDK initialization bypassed (Test Environment detected).")
         } catch (e: UnsatisfiedLinkError) {
-            println("ModelCryptoManager: NDK Library not found (Test Environment detected).")
+            // NDK library not loaded — this is expected in JVM test environments
+            android.util.Log.e(TAG, "NDK Library not loaded. Key import skipped: ${e.message}")
+        } catch (e: Exception) {
+            android.util.Log.e(TAG, "Hardware Keystore key import failed: ${e.message}")
         }
     }
 
     private fun getSecretKey(): SecretKey {
         val keyStore = KeyStore.getInstance(ANDROID_KEYSTORE)
         keyStore.load(null)
-        val entry = keyStore.getEntry(KEY_ALIAS, null) as KeyStore.SecretKeyEntry
+
+        // Retry import if key is missing (handles race condition on first boot)
+        if (!keyStore.containsAlias(KEY_ALIAS)) {
+            android.util.Log.w(TAG, "Key not found on first attempt. Retrying import...")
+            importKeyToKeystore()
+            keyStore.load(null)
+        }
+
+        val entry = keyStore.getEntry(KEY_ALIAS, null) as? KeyStore.SecretKeyEntry
+            ?: throw SecurityException("Master key not found in hardware Keystore.")
         return entry.secretKey
     }
 
@@ -174,5 +186,19 @@ object ModelCryptoManager {
         }
 
         return outputFile
+    }
+
+    /**
+     * MANDATE: IP Protection (V1.1_Updates Section 1)
+     * Securely erases all unencrypted model weights from the disk cache.
+     */
+    fun purgeModelCache(context: android.content.Context) {
+        val secureDir = java.io.File(context.noBackupFilesDir, "secure_models")
+        if (secureDir.exists()) {
+            secureDir.listFiles()?.forEach {
+                it.delete()
+                // Zero-fill or immediate deletion is preferred for IP safety
+            }
+        }
     }
 }

@@ -51,10 +51,9 @@ import com.example.models.*
 import com.example.pipeline.*
 import com.example.security.EnvironmentGuard
 import com.example.security.DeviceHealthManager
-import com.example.database.TelemetryDatabase
-import com.example.database.TelemetryQueueItem
 import com.example.utils.Constants
 import com.example.utils.PhoneNumberUtils
+import com.example.utils.TranscriptScrubber
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.RequestBody
@@ -75,6 +74,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.util.concurrent.ConcurrentLinkedQueue
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.channels.BufferOverflow
 
 /**
  * Core foreground service that records audio, runs the AI pipeline, and communicates with the cloud server.
@@ -100,6 +100,7 @@ class ScamDetectionService : Service() {
     private var recordThread: Thread? = null
     @Volatile private var audioRecord: AudioRecord? = null
     private var currentCaller = "Unknown"
+    private var currentDirection = 0
 
     // Pre-allocated inference buffers (Memory Safety Audit)
     private val sliceBuffer = FloatArray(512)
@@ -111,20 +112,20 @@ class ScamDetectionService : Service() {
 
     private val serverWhitelist = mutableSetOf<String>()
 
-    // Room DB for telemetry queue
-    private lateinit var telemetryDb: TelemetryDatabase
+    private lateinit var swarmReporter: SwarmReporter
+
     // SharedPreferences for theme toggle
     private val prefs: SharedPreferences by lazy { PreferenceManager.getDefaultSharedPreferences(this) }
 
     // ---------- OkHttp client ----------
-    private val httpClient = OkHttpClient.Builder()
-        .callTimeout(5, TimeUnit.SECONDS)
-        .build()
+    private val httpClient by lazy { SwarmReporter.getHttpClient() }
     // Native Obfuscation (V1.1_Updates Section 2): URL is fetched from encrypted C++ memory
-    private val serverBaseUrl = try {
-        com.example.security.NativeSecrets.getServerBaseUrl()
-    } catch (e: UnsatisfiedLinkError) {
-        "http://10.0.2.2:8080/api/v1" // Fallback for local JVM tests
+    private val serverBaseUrl by lazy {
+        try {
+            com.example.security.NativeSecrets.getServerBaseUrl()
+        } catch (t: Throwable) {
+            "http://10.0.2.2:8080/api/v1" // Fallback for local JVM tests
+        }
     }
 
     // ---------- Service lifecycle ----------
@@ -135,12 +136,11 @@ class ScamDetectionService : Service() {
         super.onCreate()
         createNotificationChannel()
 
+        // Initialize Swarm Reporter (V1.1 Secure Binary Telemetry)
+        swarmReporter = SwarmReporter(this)
+
         // Pull latest whitelist from server (fire‑and‑forget)
-        serviceScope.launch { syncWhitelistFromServer() }
-        // Initialize Room DB
-        telemetryDb = Room.databaseBuilder(applicationContext, TelemetryDatabase::class.java, "telemetry_queue.db").build()
-        // Start background queue processor
-        serviceScope.launch { processQueuePeriodically() }
+        serviceScope.launch(Dispatchers.IO) { syncWhitelistFromServer() }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -170,8 +170,13 @@ class ScamDetectionService : Service() {
         // V1.1_Updates Section 3: The Tripwire
         if (EnvironmentGuard.isDeviceCompromised()) {
             Log.e(tag, "SECURITY ALERT: Compromised environment detected. Refusing to boot AI pipeline.")
-            stopSelf()
-            return START_NOT_STICKY
+            _statusFlow.value = "COMPROMISED"
+            com.example.utils.CallStateBroadcaster.updateTelemetry(com.example.utils.TelemetryUpdate(
+                score = 0, transcript = "SYSTEM COMPROMISED. AI OFFLINE.", hitWord = "", callerNumber = currentCaller, stage = "COMPROMISED",
+                urgency = 0, financial = 0, coercion = 0, intimacy = 0, trust = 0, isScamScenario = false
+            ))
+            // Keep service alive so UI can display this state, but don't boot AI.
+            return START_STICKY
         }
 
         // Permission check
@@ -195,6 +200,7 @@ class ScamDetectionService : Service() {
 
         // Caller info
         currentCaller = intent?.getStringExtra(Constants.EXTRA_CALLER_NUMBER) ?: "Unknown"
+        currentDirection = intent?.getIntExtra("call_direction", 0) ?: 0
 
         serviceStartTime = System.currentTimeMillis()
 
@@ -221,7 +227,7 @@ class ScamDetectionService : Service() {
                 val db = ScamDatabase.getDatabase(this@ScamDetectionService)
                 val dotScammer = db.dotScammerDao().getScammer(PhoneNumberUtils.normalize(currentCaller))
                 if (dotScammer != null && dotScammer.severityScore >= 80) {
-                    Log.w(tag, "DoT Blacklist hit for $currentCaller! Dropping call instantly.")
+                    Log.w(tag, "DoT Blacklist hit for $currentCaller! Updating UI.")
                     val dummyResult = RiskResult(
                         score = dotScammer.severityScore,
                         transcript = "Blocked by Department of Telecommunications Blacklist",
@@ -229,7 +235,9 @@ class ScamDetectionService : Service() {
                         hitWord = "DoT_Blacklist",
                         intents = IntentScores(100, 100, 100, 0, 0)
                     )
-                    endCallAndNotify(dummyResult)
+                    broadcastRiskUpdate(dummyResult)
+                    // We don't stop the call autonomously anymore, let the user decide.
+                    // But we can stop the AI pipeline since we already know it's a scam.
                     stopSelf()
                     return@launch
                 }
@@ -243,8 +251,8 @@ class ScamDetectionService : Service() {
                 }
 
                 // Load ContactMemory from SQLite
-                val numberHash = PhoneNumberUtils.hash(currentCaller)
-                val memoryEntity = db.contactMemoryDao().getMemory(numberHash)
+                val numberEncrypted = PhoneNumberUtils.encrypt(currentCaller)
+                val memoryEntity = db.contactMemoryDao().getMemory(numberEncrypted)
                 val contactMemory = if (memoryEntity != null) ContactMemory.fromBytes(memoryEntity.memory) else ContactMemory()
 
                 // Update basic call metrics
@@ -317,142 +325,9 @@ class ScamDetectionService : Service() {
         return trustedContacts.contains(normalized)
     }
 
-    // ---------- Telemetry push ----------
-    private fun pushTelemetry(result: RiskResult) {
-        if (isNetworkAvailable()) {
-            // Normal HTTP JSON telemetry with hashed caller
-            val hashedCaller = hashString(currentCaller)
-            val payload = JSONObject().apply {
-                put("caller", hashedCaller)
-                put("score", result.score)
-                put("transcript", result.transcript)
-                put("intent_scores", org.json.JSONArray(listOf(
-                    result.intents.urgency,
-                    result.intents.financial,
-                    result.intents.coercion,
-                    result.intents.intimacy,
-                    result.intents.trust
-                )))
-                put("timestamp", System.currentTimeMillis())
-            }
-            val requestBody = payload.toString().toRequestBody("application/json".toMediaTypeOrNull())
-            val request = Request.Builder()
-                .url("$serverBaseUrl/api/telemetry")
-                .post(requestBody)
-                .build()
-            // Retry up to 3 times with exponential back‑off
-            serviceScope.launch {
-                var attempt = 0
-                var success = false
-                while (attempt < 2 && !success) {
-                    try {
-                        httpClient.newCall(request).execute().use { resp ->
-                            if (resp.isSuccessful) {
-                                success = true
-                            } else {
-                                Log.w(tag, "Telemetry rejected (code ${resp.code}), attempt ${attempt + 1}")
-                            }
-                        }
-                    } catch (e: Exception) {
-                        Log.w(tag, "Telemetry error on attempt ${attempt + 1}: ${e.message}")
-                    }
-                    if (!success) {
-                        attempt++
-                        delay(5000L)
-                    }
-                }
-                if (!success) {
-                    Log.w(tag, "Telemetry failed after $attempt attempts – queuing for later")
-                    // Queue for later transmission
-                    enqueueTelemetry(payload)
-                    // Notify user via Toast (must run on UI thread)
-                    Handler(Looper.getMainLooper()).post {
-                        Toast.makeText(this@ScamDetectionService, "Telemetry failed – data queued for later upload", Toast.LENGTH_LONG).show()
-                    }
-                }
-            }
-        } else {
-            // No network – queue telemetry for later and optionally send LoRa fallback
-            enqueueTelemetry(JSONObject().apply {
-                put("caller", hashString(currentCaller))
-                put("score", result.score)
-                put("transcript", result.transcript)
-                put("intent_scores", org.json.JSONArray(listOf(
-                    result.intents.urgency,
-                    result.intents.financial,
-                    result.intents.coercion,
-                    result.intents.intimacy,
-                    result.intents.trust
-                )))
-                put("timestamp", System.currentTimeMillis())
-            })
-            // Also send LoRa fallback as immediate low‑bandwidth path
-            sendLoRaPayload(result)
-        }
-    }
-
-    // Enqueue telemetry JSON payload into Room DB
-    private fun enqueueTelemetry(json: JSONObject) {
-        val item = TelemetryQueueItem(
-            callerHash = json.getString("caller"),
-            score = json.getInt("score"),
-            transcript = json.getString("transcript"),
-            intentScores = json.getJSONArray("intent_scores").toString(),
-            timestamp = json.getLong("timestamp")
-        )
-        serviceScope.launch {
-            telemetryDb.telemetryQueueDao().insert(item)
-        }
-    }
-
-    // Periodically process queued telemetry when network is available
-    private suspend fun processQueuePeriodically() {
-        while (coroutineContext.isActive) {
-            delay(60_000L) // every minute
-            if (isNetworkAvailable()) {
-                flushQueue()
-            }
-        }
-    }
-
-    private suspend fun flushQueue() {
-        val dao = telemetryDb.telemetryQueueDao()
-        val items = dao.getAll()
-        for (item in items) {
-            // Build request from queued item
-            val payload = JSONObject().apply {
-                put("caller", item.callerHash)
-                put("score", item.score)
-                put("transcript", item.transcript)
-                put("intent_scores", org.json.JSONArray(item.intentScores))
-                put("timestamp", item.timestamp)
-            }
-            val requestBody = payload.toString().toRequestBody("application/json".toMediaTypeOrNull())
-            val request = Request.Builder()
-                .url("$serverBaseUrl/api/telemetry")
-                .post(requestBody)
-                .build()
-            try {
-                httpClient.newCall(request).execute().use { resp ->
-                    if (resp.isSuccessful) {
-                        dao.deleteById(item.id)
-                    } else {
-                        Log.w(tag, "Failed to send queued telemetry (code ${resp.code})")
-                    }
-                }
-            } catch (e: Exception) {
-                Log.w(tag, "Error sending queued telemetry: ${e.message} - aborting queue flush")
-                break // Stop trying to send the rest of the queue if the server is unreachable
-            }
-        }
-    }
-
-    // Simple SHA‑256 hashing utility (hex string)
-    private fun hashString(input: String): String {
-        val digest = MessageDigest.getInstance("SHA-256")
-        val hashBytes = digest.digest(input.toByteArray())
-        return hashBytes.joinToString("") { byte -> "%02x".format(byte) }
-    }
+    // ---------- Telemetry removal (Insecure JSON Path) ----------
+    // DELETED: pushTelemetry, enqueueTelemetry, processQueuePeriodically, flushQueue, hashString, isNetworkAvailable, sendLoRaPayload
+    // These were removed to enforce binary-only telemetry and prevent PII leaks.
 
     // ---------- Theme toggle (SharedPreferences) ----------
     fun isDarkModeEnabled(): Boolean = prefs.getBoolean("dark_mode", true)
@@ -465,37 +340,7 @@ class ScamDetectionService : Service() {
         startActivity(intent)
     }
 
-    // ---------- Network utilities ----------
-    private fun isNetworkAvailable(): Boolean {
-        val cm = getSystemService(CONNECTIVITY_SERVICE) as ConnectivityManager
-        val caps = cm.getNetworkCapabilities(cm.activeNetwork)
-        return caps?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
-    }
-
-    // ---------- LoRa fallback payload ----------
-    private fun sendLoRaPayload(result: RiskResult) {
-        // 9‑byte binary payload: 4‑byte caller hash, 1‑byte score, 4‑byte timestamp (seconds)
-        val callerHash = currentCaller.hashCode().toLong() and 0xffffffffL
-        val timestampSec = (System.currentTimeMillis() / 1000L) and 0xffffffffL
-        val buffer = Buffer()
-        buffer.writeIntLe(callerHash.toInt())
-        buffer.writeByte(result.score)
-        buffer.writeIntLe(timestampSec.toInt())
-        val requestBody = buffer.readByteArray().toRequestBody("application/octet-stream".toMediaTypeOrNull())
-        val request = Request.Builder()
-            .url("$serverBaseUrl/api/lora")
-            .post(requestBody)
-            .build()
-        serviceScope.launch {
-            try {
-                httpClient.newCall(request).execute().use { resp ->
-                    if (!resp.isSuccessful) Log.w(tag, "LoRa payload rejected: ${resp.code}")
-                }
-            } catch (e: Exception) {
-                Log.w(tag, "LoRa send error: ${e.message}")
-            }
-        }
-    }
+    // ---------- LoRa fallback payload (DELETED) ----------
 
     // ---------- Inference pipeline (with telemetry) ----------
     private fun startInferencePipeline() {
@@ -548,7 +393,7 @@ class ScamDetectionService : Service() {
             emptyBuffers.add(FloatArray(maxSamples))
             emptyBuffers.add(FloatArray(maxSamples))
 
-            val readyQueue = Channel<FloatArray>(Channel.UNLIMITED)
+            val readyQueue = Channel<FloatArray>(capacity = 2, onBufferOverflow = BufferOverflow.DROP_OLDEST)
 
             var currentBuffer = emptyBuffers.poll() ?: FloatArray(maxSamples)
             var currentSampleCount = 0
@@ -573,95 +418,122 @@ class ScamDetectionService : Service() {
 
                 try {
                     for (chunkForAI in readyQueue) {
-                    if (!isRecording) break
+                        try {
+                            if (!isRecording) break
 
-                    Log.e("AI_ENGINE", "INFERENCE_TRAP: Incoming buffer detected. Starting Whisper/ONNX processing...")
-                    val startTime = System.currentTimeMillis()
+                            Log.e("AI_ENGINE", "INFERENCE_TRAP: Incoming buffer detected. Starting Whisper/ONNX processing...")
+                            val startTime = System.currentTimeMillis()
 
-                    val pipeline = pipelineManager
-                    if (pipeline != null) {
-                        var lastResult: com.example.models.RiskResult? = null
+                            val pipeline = pipelineManager
+                            if (pipeline != null) {
+                                var lastResult: com.example.models.RiskResult? = null
 
-                        for (i in chunkForAI.indices step sliceSize) {
-                            val end = minOf(i + sliceSize, chunkForAI.size)
-                            val length = end - i
+                                for (i in chunkForAI.indices step sliceSize) {
+                                    val end = minOf(i + sliceSize, chunkForAI.size)
+                                    val length = end - i
 
-                            val slice = if (length == sliceSize) {
-                                System.arraycopy(chunkForAI, i, sliceBuffer, 0, sliceSize)
-                                sliceBuffer
-                            } else {
-                                // Zero-allocation padded copy rather than copyOfRange
-                                sliceBuffer.fill(0f)
-                                System.arraycopy(chunkForAI, i, sliceBuffer, 0, length)
-                                sliceBuffer
-                            }
+                                    val slice = if (length == sliceSize) {
+                                        System.arraycopy(chunkForAI, i, sliceBuffer, 0, sliceSize)
+                                        sliceBuffer
+                                    } else {
+                                        // Zero-allocation padded copy rather than copyOfRange
+                                        sliceBuffer.fill(0f)
+                                        System.arraycopy(chunkForAI, i, sliceBuffer, 0, length)
+                                        sliceBuffer
+                                    }
 
-                            // ADPF Thermal Check
-                            val mode = DeviceHealthManager.getOperationalMode(applicationContext)
+                                    // ADPF Thermal Check
+                                    val mode = DeviceHealthManager.getOperationalMode(applicationContext)
 
-                            when (mode) {
-                                DeviceHealthManager.OperationalMode.NOMINAL -> {
-                                    // Device is cool. Run full inference.
-                                    lastResult = pipeline.processChunk(slice)
+                                    when (mode) {
+                                        DeviceHealthManager.OperationalMode.NOMINAL -> {
+                                            // Device is cool. Run full inference.
+                                            lastResult = pipeline.processChunk(slice)
+                                        }
+                                        DeviceHealthManager.OperationalMode.THROTTLED -> {
+                                            Log.w("ScamDetection", "THERMAL WARNING: Shedding NLP load.")
+                                            // Skip heavy NLP processing, rely on VAD/ASR/Regex
+                                            lastResult = pipeline.processChunk(slice, skipNlp = true)
+                                        }
+                                        DeviceHealthManager.OperationalMode.CRITICAL -> {
+                                            Log.e("SAFETY", "Critical heat detected, AI shutdown")
+                                            // Break out to finally block to handle closure
+                                            _statusFlow.value = "AI_SUSPENDED"
+                                            break
+                                        }
+                                    }
                                 }
-                                DeviceHealthManager.OperationalMode.THROTTLED -> {
-                                    Log.w("ScamDetection", "THERMAL WARNING: Shedding NLP load.")
-                                    // Skip heavy NLP processing, rely on VAD/ASR/Regex
-                                    lastResult = pipeline.processChunk(slice, skipNlp = true)
-                                }
-                                DeviceHealthManager.OperationalMode.CRITICAL -> {
-                                    Log.e("SAFETY", "Critical heat detected, AI shutdown")
-                                    // Break out to finally block to handle closure
-                                    _statusFlow.value = "AI_SUSPENDED"
-                                    break 
-                                }
-                            }
-                        }
 
-                        val inferenceTime = System.currentTimeMillis() - startTime
-                        Log.e("AI_ENGINE", "INFERENCE_TRAP: Inference COMPLETE in ${inferenceTime}ms. Score: ${lastResult?.score}")
+                                val inferenceTime = System.currentTimeMillis() - startTime
+                                Log.e("AI_ENGINE", "INFERENCE_TRAP: Inference COMPLETE in ${inferenceTime}ms. Score: ${lastResult?.score}")
 
-                        Log.d("AudioLoop", "Finished processing 3-second block through VAD/ASR.")
-                        val result = lastResult
-                        if (result != null) {
-                            _scoreFlow.value = result.score
-                            _transcriptFlow.value = result.transcript
-                            
-                            // Initialize DB Singleton lazily or use a pre-initialized one
-                            val appDb = AppDatabase.getDatabase(applicationContext)
-                            val scamRepo = ScamRepository.getInstance(appDb)
-                            
-                            when {
-                                result.isRoboVoice -> broadcastRoboWarning()
-                                result.score >= 70 -> {
-                                    endCallAndNotify(result)
-                                    dispatchGuardianAlert(currentCaller)
-                                }
-                                isTrusted(currentCaller) -> { /* trusted */ }
-                                isWhitelisted(currentCaller) -> { /* whitelisted */ }
-                                else -> if (result.score > 40) broadcastRiskUpdate(result)
-                            }
-                            
-                            // Database Write (Fire-and-forget in IO)
-                            if (result.score >= 40) {
-                                serviceScope.launch(Dispatchers.IO) {
-                                    scamRepo.insertScam(
-                                        ScamCallEntity(
-                                            phoneNumber = currentCaller,
-                                            threatScore = result.score.toFloat(),
-                                            isFlagged = result.score >= 70
+                                Log.d("AudioLoop", "Finished processing 3-second block through VAD/ASR.")
+                                val result = lastResult
+                                if (result != null) {
+                                    _scoreFlow.value = result.score
+                                    _transcriptFlow.value = result.transcript
+
+                                    com.example.utils.CallStateBroadcaster.updateTelemetry(
+                                        com.example.utils.TelemetryUpdate(
+                                            score = result.score,
+                                            transcript = result.transcript,
+                                            hitWord = result.hitWord,
+                                            callerNumber = currentCaller,
+                                            stage = _statusFlow.value,
+                                            urgency = result.intents.urgency,
+                                            financial = result.intents.financial,
+                                            coercion = result.intents.coercion,
+                                            intimacy = result.intents.intimacy,
+                                            trust = result.intents.trust,
+                                            isScamScenario = result.score >= 70
                                         )
                                     )
-                                }
-                            }
-                        }
-                    } else {
-                        Log.e("AudioLoop", "PipelineManager became null during processing!")
-                    }
 
-                    // Return the processed buffer to the object pool to stop GC Thrashing
-                    emptyBuffers.offer(chunkForAI)
-                }
+                                    // Initialize DB Singleton lazily or use a pre-initialized one
+                                    val appDb = AppDatabase.getDatabase(applicationContext)
+                                    val scamRepo = ScamRepository.getInstance(appDb)
+
+                                    val settings = getSharedPreferences("cyberguard_settings", MODE_PRIVATE)
+                                    val threshold = settings.getInt("alert_threshold", 70)
+
+                                    when {
+                                        result.isRoboVoice -> broadcastRoboWarning()
+                                        result.score >= threshold -> {
+                                            broadcastRiskUpdate(result) // Let UI turn red, but DO NOT drop call
+                                            dispatchGuardianAlert(currentCaller)
+                                        }
+                                        isTrusted(currentCaller) -> { /* trusted */ }
+                                        isWhitelisted(currentCaller) -> { /* whitelisted */ }
+                                        else -> if (result.score > 40) broadcastRiskUpdate(result)
+                                    }
+
+                                    // Database Write (Fire-and-forget in IO)
+                                    if (result.score >= 40) {
+                                        serviceScope.launch(Dispatchers.IO) {
+                                            try {
+                                                scamRepo.insertScam(
+                                                    ScamCallEntity(
+                                                        phoneNumber = currentCaller,
+                                                        threatScore = result.score.toFloat(),
+                                                        isFlagged = result.score >= 70
+                                                    )
+                                                )
+                                            } catch (e: Exception) {
+                                                Log.e("AudioLoop", "Failed to insert scam call into database: ${e.message}", e)
+                                            }
+                                        }
+                                    }
+                                }
+                            } else {
+                                Log.e("AudioLoop", "PipelineManager became null during processing!")
+                            }
+                        } catch (e: Exception) {
+                            Log.e("AudioLoop", "CRITICAL AI ERROR: Inference threw exception on this chunk: ${e.message}", e)
+                        } finally {
+                            // Guarantee return of processed buffer to the object pool to stop GC Thrashing
+                            emptyBuffers.offer(chunkForAI)
+                        }
+                    }
                 } finally {
                     pipelineManager?.close()
                 }
@@ -701,14 +573,7 @@ class ScamDetectionService : Service() {
     }
 
     // ---------- Helper methods ----------
-    private fun endCallAndNotify(risk: RiskResult) {
-        CyberGuardInCallService.disconnectCall()
-        val intent = Intent("com.example.ACTION_SCAM_DETECTED").apply {
-            putExtra("score", risk.score)
-            putExtra("hit_word", risk.hitWord)
-        }
-        sendBroadcast(intent)
-    }
+    // Removed endCallAndNotify to stop autonomous hangups.
 
     private fun broadcastRiskUpdate(risk: RiskResult) {
         val intent = Intent("com.example.ACTION_RISK_UPDATE").apply {
@@ -716,6 +581,7 @@ class ScamDetectionService : Service() {
             putExtra("transcript", risk.transcript)
             putExtra("hit_word", risk.hitWord)
         }
+        intent.setPackage(packageName)
         sendBroadcast(intent)
     }
 
@@ -723,6 +589,7 @@ class ScamDetectionService : Service() {
         Log.w(tag, "Acoustic Deepfake / Robo-voice detected! Triggering UI Overlay alert.")
         _statusFlow.value = "ROBO_WARNING"
         val intent = Intent("com.example.ACTION_ROBO_WARNING")
+        intent.setPackage(packageName)
         sendBroadcast(intent)
         // In IncomingCallActivity, this will turn the screen light red and play an audio warning
     }
@@ -794,14 +661,19 @@ class ScamDetectionService : Service() {
         Log.i(tag, "Service onDestroy() - Initiating asynchronous teardown.")
 
         isRecording = false
-        serviceJob.cancel()
-
+        recordThread?.interrupt()
+        
+        // Save these references BEFORE cancelling the scope
         val currentAudioRecord = audioRecord
         val currentWakeLock = wakeLock
         val appContext = applicationContext
         val currentPipeline = pipelineManager
         val caller = currentCaller
         val startTime = serviceStartTime
+
+        // Now cancel the scope so the launch block stops waiting
+        serviceJob.cancel()
+        serviceScope.cancel()
 
         // Safe Asynchronous Hardware & DB Teardown
         @OptIn(DelicateCoroutinesApi::class)
@@ -821,22 +693,30 @@ class ScamDetectionService : Service() {
                 val threshold = settings.getInt("alert_threshold", 70)
                 val isScam = score >= threshold
 
+                // MANDATE: Scrub transcript for PII before saving to local Room DB (DPDP Act)
+                val rawTranscript = finalResult?.transcript ?: ""
+                val scrubbedTranscript = TranscriptScrubber.scrub(rawTranscript)
+
                 val db = ScamDatabase.getDatabase(appContext)
-                val log = com.example.models.CallLog(
-                    callerNumber = caller,
-                    timestamp = System.currentTimeMillis(),
-                    riskScore = score,
-                    isScam = isScam,
-                    transcript = finalResult?.transcript ?: "",
-                    hitKeywords = finalResult?.hitWord ?: "",
-                    durationSeconds = durationSeconds,
-                    wasBlocked = isScam
-                )
-                db.callLogDao().insertLog(log)
+                // CallLog database insertion has been migrated to CyberGuardInCallService
+                // to correctly capture missed and rejected calls.
+
+                // TRIGGER: Secured Binary Telemetry (10.25-byte Swarm Payload)
+                if (isScam) {
+                    val context = CallContext(
+                        totalCalls = (currentPipeline?.contactMemory?.totalCalls ?: 0),
+                        daysKnown = (currentPipeline?.contactMemory?.daysKnown ?: 0)
+                    )
+                    // Launch in a job that isn't cancelled by service stop
+                    @OptIn(DelicateCoroutinesApi::class)
+                    GlobalScope.launch(Dispatchers.IO) {
+                        swarmReporter.reportScam(caller, context, finalResult ?: RiskResult(score = score), false)
+                    }
+                }
 
                 currentPipeline?.contactMemory?.let { memory ->
-                    val numberHash = PhoneNumberUtils.hash(caller)
-                    db.contactMemoryDao().saveMemory(ContactMemoryEntity(numberHash, memory.toBytes(), System.currentTimeMillis()))
+                    val numberEncrypted = PhoneNumberUtils.encrypt(caller)
+                    db.contactMemoryDao().saveMemory(ContactMemoryEntity(numberEncrypted, memory.toBytes(), System.currentTimeMillis()))
                 }
             } catch (e: Exception) {
                 Log.e(tag, "Background Teardown: Database logging failed", e)
@@ -850,20 +730,22 @@ class ScamDetectionService : Service() {
                 Log.e(tag, "Background Teardown: WakeLock release failed", e)
             }
 
-            com.example.pipeline.PipelineSingleton.clear()
+            try {
+                // Safely clear the singleton without crashing the GlobalScope if it fails
+                com.example.pipeline.PipelineSingleton.clear()
+            } catch (e: Exception) {
+                Log.e(tag, "Background Teardown: PipelineSingleton clear failed", e)
+            }
         }
 
         com.example.utils.CallStateBroadcaster.endCall()
 
-        // 1. Ensure the C++ layer is explicitly notified to free the mmap buffers
         try {
             pipelineManager?.close()
             pipelineManager = null
         } catch (e: Exception) {
             Log.e("ScamDetectionService", "Error during native cleanup: ${e.message}")
         } finally {
-            // 2. Cancel the coroutine scope so no DB operations hang in limbo
-            serviceScope.cancel()
             super.onDestroy()
         }
     }

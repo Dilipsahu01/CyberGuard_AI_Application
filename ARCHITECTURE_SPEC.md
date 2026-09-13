@@ -30,11 +30,13 @@ Running deep learning models concurrently with active cellular calls requires ex
 To prevent catastrophic native memory leaks common in JNI/ONNX bridges:
 *   **Zero-Copy Execution:** Employs `MappedByteBuffer` to load the AI models directly into memory without duplicating the payload into the Dalvik heap.
 *   **Synchronized Teardown:** The `PipelineSingleton` implements a rigorous `@Synchronized` C++ teardown protocol. Upon `ScamDetectionService` destruction, explicit `close()` commands are dispatched to the C++ instances within strict `try-finally` blocks to guarantee release even during abrupt OS eviction.
+*   **Immediate Cache Purge:** To protect intellectual property, decrypted model weights (`model.int8.onnx`) are purged from the disk cache immediately after being loaded into RAM by the Sherpa-ONNX engine.
 
 ### 🛡️ V1.1 Advanced Cryptography (The Vault)
 CyberGuard-AI ensures that its intellectual property (150MB ONNX and VAD models) cannot be reverse-engineered or extracted on rooted devices.
 *   **AES-GCM Encryption:** Models are encrypted at rest using AES-GCM and stored securely as `.enc` files.
-*   **Hardware-Backed Keystore:** The master decryption key is safely locked within the Android Keystore system. It is generated natively inside the `libcyberguard_secrets.so` JNI library and loaded dynamically into the hardware Trusted Execution Environment (TEE).
+*   **Hardware-Backed Keystore:** Decryption keys are managed within the Android Keystore system.
+*   **Dynamic Key Derivation:** To prevent static key extraction, the master key is derived at runtime in the C++ layer using an XOR mix-in with device-unique salts (e.g., hardware fingerprints).
 *   **RAM-Only Decryption & Integrity:** `ModelCryptoManager.kt` decrypts the ONNX models sequentially into volatile RAM using an `InputStream`. The `ModelIntegrityVerifier.kt` strictly checks the SHA-256 cryptographic hashes against signed baselines to instantly reject poisoned neural networks.
 *   **Environmental Security:** `EnvironmentGuard.kt` intercepts the background service initialization and scans the `$PATH` for `su` binaries, test-keys, and `rw` system mounts to crash the app if the execution environment is compromised.
 
@@ -52,13 +54,11 @@ To achieve instant, offline identification of known malicious actors:
 *   **10-Million Bit Matrix:** The platform loads a 10-million bit array into memory (~1.22 MB allocation).
 *   **Kirsch-Mitzenmacher Double-Hashing:** By fusing `MurmurHash3` and `xxHash32`, the filter executes at strict **`O(1)` time complexity** with a mathematically proven False Positive Rate (FPR) of just **~0.00009%**.
 
-### 📦 Bit-Packed Serialization
+### 📦 Bit-Packed Serialization & Privacy Enforcement
 The system compresses the entire lifecycle of a call into microscopic bit-packed payloads:
 *   **`CallContext` (82 Bits):** We encode 14 distinct telemetry vectors (including Bloom filter flags, NLP logits, and days known) into exactly **10.25 bytes**.
-*   **`ContactMemory` (72 Bits):** To combat long-term "Pig Butchering" (Romance) scams, historical interaction data (Trust/Intimacy scales, Total Calls, Emotional Intensity) is fused into a dense **9-byte** Little-Endian struct, persisted locally via SQLite.
-
-### 🌐 5G URLLC Transport Layer
-By stripping out verbose JSON/REST overhead, the final 75-bit network payload is dispatched via UDP with a **DSCP `0xB8`** header (Expedited Forwarding). This guarantees priority routing on 5G networks, allowing the Swarm to update global threat signatures in milliseconds with virtually zero network cost.
+*   **Zero-Transcript Policy:** To comply with the DPDP Act, **raw transcripts are never sent to the server**. Only anonymized, bit-packed threat indicators are transmitted.
+*   **Anonymized Identifiers:** Caller phone numbers are SHA-256 hashed on-device before transmission, ensuring the server never sees raw PII.
 
 ---
 
@@ -75,20 +75,30 @@ Designed specifically for the elderly and cognitively vulnerable. When the local
 
 ---
 
-## 5. Concurrency & UI Architecture
-The presentation layer is built exclusively with **Jetpack Compose**, implementing a fluid, reactive state machine driven by Kotlin `StateFlows` and observing via `collectAsStateWithLifecycle()`.
-
-*   **Directional UI Logic & Predictive Back:** The `ActiveCallViewModel` handles `CallDirection` state seamlessly distinguishing Incoming/Outgoing UI flows. The system natively supports Android 14 predictive back gestures via `android:enableOnBackInvokedCallback="true"`.
-*   **Data Persistence (Room):** Incorporates a strict **Room Database** persistence layer. Threat data is persisted asynchronously utilizing a `ScamRepository` pattern, completely non-blocking to the inference stream via fire-and-forget `Dispatchers.IO` coroutines. `ScamHistoryViewModel` utilizes `SharingStarted.WhileSubscribed(5000)` to efficiently cancel Flow subscriptions when UI is backgrounded.
-*   **Smart T9 Predictive Dialer:** Implements a high-performance predictive search algorithm over local SQLite contacts, rendering instant visual suggestions via a highly optimized `LazyRow`.
-*   **Mutually Exclusive Tooling:** The Active Call screen dynamically allocates screen real estate, ensuring complex elements like "Live AI ASR Captions" and the "Scam Evidence Pad" remain mutually exclusive to prevent cognitive overload.
-*   **Coroutine Safety:** To prevent CPU thrashing and orphaned threads during an abrupt call termination, all background AI inference tasks are strictly anchored to a supervised `serviceScope`. When the OS tears down the Service, the `SupervisorJob` cascades cancellation to all child coroutines instantaneously.
-*   **ProGuard/R8 Integrity:** Preserves crucial runtime structures by protecting `androidx.compose.runtime.snapshots.Snapshot` in `proguard-rules.pro`.
+## 5. Storage Security (SQLCipher)
+Local storage is hardened to prevent data extraction on compromised devices.
+*   **SQLCipher Integration:** All Room databases (`scam_database`, `cyberguard_app_database`) are encrypted at rest using 256-bit AES via **SQLCipher**.
+*   **Hardware-Bound Passphrases:** Database passphrases are randomly generated and securely stored within the **Android Hardware Keystore (TEE)**, ensuring that even root access cannot decrypt the database without hardware-level intervention.
 
 ---
 
-## 6. Privacy Compliance & Data Safety
-CyberGuard-AI is engineered from the ground up to comply with strict App Store Spyware and Data Broker policies.
+## 6. Privacy Compliance (DPDP Act 2023)
+CyberGuard-AI is engineered for strict compliance with modern privacy regulations.
+*   **On-Device PII Scrubbing:** `TranscriptScrubber.kt` implements a localized Named Entity Recognition (NER) proxy. It automatically masks Names, OTPs, and Bank Account numbers in call transcripts before they are persisted to the local encrypted database.
+*   **Right to be Forgotten:** The application features a **"Purge All My Data"** workflow in the Advanced Settings. This executes a complete local database wipe and triggers a server-side cascade delete for associated hashed telemetry.
+*   **100% On-Device Ephemeral Processing:** Microphone audio is parsed in volatile RAM and destroyed immediately after inference.
 
-*   **100% On-Device Ephemeral Processing:** The microphone stream is parsed in volatile RAM and piped directly into the local ONNX models. Because the audio bytes are destroyed immediately after inference and never uploaded to the cloud, the app legally bypasses "Data Sharing" penalties.
-*   **Prominent Disclosure:** Before invoking `FOREGROUND_SERVICE_TYPE_MICROPHONE`, the app explicitly blocks the user with an unskippable "Prominent Disclosure" screen, strictly detailing the exact nature of the localized acoustic analysis to guarantee absolute consent and transparency.
+---
+
+## 7. Network Hardening
+*   **TLS Certificate Pinning:** The network layer (OkHttp) implements Certificate Pinning for `api.cyberguard-ai.com`, preventing Man-in-the-Middle (MITM) attacks by malicious root certificates.
+*   **5G URLLC Transport Layer:** Priority routing is achieved using **DSCP `0xB8`** (Expedited Forwarding) headers on secure sockets, forcing telemetry packets over the URLLC low-latency slice.
+
+---
+
+## 8. Concurrency & UI Architecture
+The presentation layer is built exclusively with **Jetpack Compose**, implementing a fluid, reactive state machine driven by Kotlin `StateFlows`.
+
+*   **Directional UI Logic & Predictive Back:** Seamlessly distinguishes Incoming/Outgoing UI flows with Android 14 predictive back support.
+*   **Data Persistence (Room):** Threat data is persisted asynchronously utilizing `Dispatchers.IO` coroutines, guaranteed Main-thread safety.
+*   **Coroutine Safety:** Background tasks are strictly anchored to a supervised `serviceScope`, ensuring instantaneous cleanup upon service teardown.

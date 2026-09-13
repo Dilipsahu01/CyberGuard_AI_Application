@@ -1,6 +1,7 @@
 package com.example.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -29,8 +30,32 @@ private data class CallLogEntry(
     val timeTop: String,
     val timeBottom: String? = null,
     val expanded: Boolean = false,
-    val count: Int = 1
+    val count: Int = 1,
+    val number: String,
+    val id: Int
 )
+
+private fun lookupContactName(context: android.content.Context, number: String): String? {
+    var name: String? = null
+    try {
+        val uri = android.net.Uri.withAppendedPath(
+            android.provider.ContactsContract.PhoneLookup.CONTENT_FILTER_URI,
+            android.net.Uri.encode(number)
+        )
+        val projection = arrayOf(android.provider.ContactsContract.PhoneLookup.DISPLAY_NAME)
+        context.contentResolver.query(uri, projection, null, null, null)?.use { cursor ->
+            if (cursor.moveToFirst()) {
+                val idx = cursor.getColumnIndex(android.provider.ContactsContract.PhoneLookup.DISPLAY_NAME)
+                if (idx != -1) {
+                    name = cursor.getString(idx)
+                }
+            }
+        }
+    } catch (e: Exception) {
+        // ignore
+    }
+    return name
+}
 
 @Composable
 fun CallLogsScreen(
@@ -42,8 +67,21 @@ fun CallLogsScreen(
     val db = remember { com.example.models.ScamDatabase.getDatabase(context) }
     val logs by (viewModel?.allLogs ?: db.callLogDao().getAllLogs()).collectAsState(initial = emptyList())
     var selectedTab by remember { mutableIntStateOf(0) }
+    var searchQuery by remember { mutableStateOf("") }
 
-    val groupedLogs = remember(logs) {
+    val contactNamesMap = remember { mutableStateMapOf<String, String>() }
+    LaunchedEffect(logs) {
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            logs.forEach { log ->
+                if (!contactNamesMap.containsKey(log.callerNumber)) {
+                    val name = lookupContactName(context, log.callerNumber)
+                    if (name != null) contactNamesMap[log.callerNumber] = name
+                }
+            }
+        }
+    }
+
+    val groupedLogs = remember(logs, searchQuery) {
         val grouped = mutableListOf<CallLogEntry>()
         if (logs.isEmpty()) return@remember grouped
 
@@ -52,30 +90,50 @@ fun CallLogsScreen(
 
         for (i in 1 until logs.size) {
             val log = logs[i]
-            if (log.callerNumber == currentLog.callerNumber && log.wasBlocked == currentLog.wasBlocked) {
+            if (log.callerNumber == currentLog.callerNumber && log.wasBlocked == currentLog.wasBlocked && log.direction == currentLog.direction) {
                 currentGroupCount++
             } else {
-                val direction = if (currentLog.wasBlocked) CallDirection.MISSED else CallDirection.INCOMING
+                val direction = when (currentLog.direction) {
+                    0 -> CallDirection.INCOMING
+                    1 -> CallDirection.OUTGOING
+                    2 -> CallDirection.MISSED
+                    else -> CallDirection.UNKNOWN
+                }
                 val sdf = java.text.SimpleDateFormat("hh:mm a", java.util.Locale.getDefault())
                 val timeString = sdf.format(java.util.Date(currentLog.timestamp))
                 val durationStr = if (currentLog.durationSeconds > 0) "${currentLog.durationSeconds}s" else "Not Received"
                 val subTitle = if (currentLog.isScam) "Scam Blocked (Score: ${currentLog.riskScore})" else "Call, $durationStr"
 
-                val title = if (currentGroupCount > 1) "${currentLog.callerNumber} ($currentGroupCount)" else currentLog.callerNumber
-                grouped.add(CallLogEntry(direction, title, subTitle, timeString, count = currentGroupCount))
+                val contactName = contactNamesMap[currentLog.callerNumber]
+                val baseTitle = contactName ?: currentLog.callerNumber
+                val title = if (currentGroupCount > 1) "$baseTitle ($currentGroupCount)" else baseTitle
+
+                if (searchQuery.isBlank() || baseTitle.contains(searchQuery, ignoreCase = true) || currentLog.callerNumber.contains(searchQuery)) {
+                    grouped.add(CallLogEntry(direction, title, subTitle, timeString, count = currentGroupCount, number = currentLog.callerNumber, id = currentLog.id))
+                }
 
                 currentLog = log
                 currentGroupCount = 1
             }
         }
 
-        val direction = if (currentLog.wasBlocked) CallDirection.MISSED else CallDirection.INCOMING
+        val direction = when (currentLog.direction) {
+            0 -> CallDirection.INCOMING
+            1 -> CallDirection.OUTGOING
+            2 -> CallDirection.MISSED
+            else -> CallDirection.UNKNOWN
+        }
         val sdf = java.text.SimpleDateFormat("hh:mm a", java.util.Locale.getDefault())
         val timeString = sdf.format(java.util.Date(currentLog.timestamp))
         val durationStr = if (currentLog.durationSeconds > 0) "${currentLog.durationSeconds}s" else "Not Received"
         val subTitle = if (currentLog.isScam) "Scam Blocked (Score: ${currentLog.riskScore})" else "Call, $durationStr"
-        val title = if (currentGroupCount > 1) "${currentLog.callerNumber} ($currentGroupCount)" else currentLog.callerNumber
-        grouped.add(CallLogEntry(direction, title, subTitle, timeString, count = currentGroupCount))
+        val contactName = contactNamesMap[currentLog.callerNumber]
+        val baseTitle = contactName ?: currentLog.callerNumber
+        val title = if (currentGroupCount > 1) "$baseTitle ($currentGroupCount)" else baseTitle
+        
+        if (searchQuery.isBlank() || baseTitle.contains(searchQuery, ignoreCase = true) || currentLog.callerNumber.contains(searchQuery)) {
+            grouped.add(CallLogEntry(direction, title, subTitle, timeString, count = currentGroupCount, number = currentLog.callerNumber, id = currentLog.id))
+        }
 
         grouped
     }
@@ -91,7 +149,7 @@ fun CallLogsScreen(
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 item { AppHeader() }
-                item { SearchBar() }
+                item { SearchBar(query = searchQuery, onQueryChange = { searchQuery = it }) }
                 item {
                     TabSwitcher(
                         selectedTab = selectedTab,
@@ -111,8 +169,22 @@ fun CallLogsScreen(
                     )
                 }
 
-                items(groupedLogs) { entry ->
-                    CallLogCard(entry)
+                if (groupedLogs.isEmpty()) {
+                    item {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 64.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text("No call logs available.", color = Gray500)
+                        }
+                    }
+                } else {
+                    items(items = groupedLogs, key = { it.id }) { entry ->
+                        var isExpanded by remember { mutableStateOf(false) }
+                        CallLogCard(entry = entry.copy(expanded = isExpanded), onClick = { isExpanded = !isExpanded })
+                    }
                 }
 
                 item { Spacer(Modifier.height(80.dp)) }
@@ -129,17 +201,19 @@ fun CallLogsScreen(
 }
 
 @Composable
-private fun CallLogCard(entry: CallLogEntry) {
+private fun CallLogCard(entry: CallLogEntry, onClick: () -> Unit = {}) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     val (icon, tint) = when (entry.direction) {
         CallDirection.OUTGOING -> Icons.AutoMirrored.Filled.CallMade to Gray700
         CallDirection.INCOMING -> Icons.AutoMirrored.Filled.CallReceived to Gray700
         CallDirection.MISSED -> Icons.Filled.PhoneDisabled to RedEndCall
+        CallDirection.UNKNOWN -> Icons.Filled.Call to Gray700
     }
 
     ElevatedCard(
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.elevatedCardColors(containerColor = Color.White),
-        modifier = Modifier.fillMaxWidth()
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)
     ) {
         Column(
             modifier = Modifier
@@ -190,10 +264,21 @@ private fun CallLogCard(entry: CallLogEntry) {
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.End
                 ) {
-                    IconButton(onClick = { /* Call */ }) {
+                    IconButton(onClick = {
+                        val intent = android.content.Intent(android.content.Intent.ACTION_DIAL).apply {
+                            data = android.net.Uri.parse("tel:${entry.number}")
+                        }
+                        context.startActivity(intent)
+                    }) {
                         Icon(Icons.Filled.Call, contentDescription = "Call", tint = Primary)
                     }
-                    IconButton(onClick = { /* Add Contact */ }) {
+                    IconButton(onClick = {
+                        val intent = android.content.Intent(android.content.Intent.ACTION_INSERT).apply {
+                            type = android.provider.ContactsContract.RawContacts.CONTENT_TYPE
+                            putExtra(android.provider.ContactsContract.Intents.Insert.PHONE, entry.number)
+                        }
+                        context.startActivity(intent)
+                    }) {
                         Icon(Icons.Filled.PersonAdd, contentDescription = "Add Contact", tint = Gray700)
                     }
                 }

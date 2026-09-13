@@ -13,5 +13,7 @@ data class CallLog(
     val transcript: String,
     val hitKeywords: String,
     val durationSeconds: Int,
-    val wasBlocked: Boolean
+    val wasBlocked: Boolean,
+    val direction: Int = -1, // -1 = UNKNOWN, 0 = INCOMING, 1 = OUTGOING, 2 = MISSED
+    val userFeedback: String? = null // "CONFIRMED_SCAM", "FALSE_POSITIVE", or null
 )

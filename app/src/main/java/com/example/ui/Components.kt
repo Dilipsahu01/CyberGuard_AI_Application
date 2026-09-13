@@ -13,6 +13,9 @@ import androidx.compose.material.icons.filled.Dialpad
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.Voicemail
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -38,7 +41,10 @@ import androidx.compose.ui.unit.sp
 fun AppHeader(
     modifier: Modifier = Modifier,
     onSettingsClick: () -> Unit = {},
-    onLogsClick: () -> Unit = {}
+    onLogsClick: () -> Unit = {},
+    onContactsClick: () -> Unit = {},
+    onFavoritesClick: () -> Unit = {},
+    onVoicemailClick: () -> Unit = {}
 ) {
     Row(
         modifier = modifier
@@ -50,10 +56,37 @@ fun AppHeader(
         Text(
             text = "CYBERGUARD-AI",
             color = TitleBrown,
-            fontSize = 18.sp,
+            fontSize = 14.sp,
             fontWeight = FontWeight.SemiBold
         )
         Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                imageVector = Icons.Filled.Star,
+                contentDescription = "Favorites",
+                tint = Gray800,
+                modifier = Modifier
+                    .size(24.dp)
+                    .clickable(onClick = onFavoritesClick)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Icon(
+                imageVector = Icons.Filled.Voicemail,
+                contentDescription = "Voicemail",
+                tint = Gray800,
+                modifier = Modifier
+                    .size(24.dp)
+                    .clickable(onClick = onVoicemailClick)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Icon(
+                imageVector = Icons.Filled.Person,
+                contentDescription = "Contacts",
+                tint = Gray800,
+                modifier = Modifier
+                    .size(24.dp)
+                    .clickable(onClick = onContactsClick)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
             Icon(
                 imageVector = Icons.AutoMirrored.Filled.List,
                 contentDescription = "Call Logs",
@@ -62,7 +95,7 @@ fun AppHeader(
                     .size(24.dp)
                     .clickable(onClick = onLogsClick)
             )
-            Spacer(modifier = Modifier.width(16.dp))
+            Spacer(modifier = Modifier.width(8.dp))
             Icon(
                 imageVector = Icons.Filled.Settings,
                 contentDescription = "Settings",
@@ -79,6 +112,8 @@ fun AppHeader(
 @Composable
 fun SearchBar(
     modifier: Modifier = Modifier,
+    query: String = "",
+    onQueryChange: (String) -> Unit = {},
     showAdd: Boolean = false,
     onAddClick: () -> Unit = {}
 ) {
@@ -96,11 +131,21 @@ fun SearchBar(
             modifier = Modifier.size(20.dp)
         )
         Spacer(Modifier.width(8.dp))
-        Text(
-            text = "Search name, number.....",
-            color = Gray500,
-            fontSize = 15.sp,
-            modifier = Modifier.weight(1f)
+        androidx.compose.foundation.text.BasicTextField(
+            value = query,
+            onValueChange = onQueryChange,
+            modifier = Modifier.weight(1f),
+            textStyle = androidx.compose.ui.text.TextStyle(color = Gray800, fontSize = 15.sp),
+            decorationBox = { innerTextField ->
+                if (query.isEmpty()) {
+                    Text(
+                        text = "Search name, number.....",
+                        color = Gray500,
+                        fontSize = 15.sp
+                    )
+                }
+                innerTextField()
+            }
         )
         if (showAdd) {
             Icon(

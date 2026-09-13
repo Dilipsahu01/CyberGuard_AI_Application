@@ -78,7 +78,7 @@ fun ScamHistoryScreen(
                 contentPadding = PaddingValues(vertical = 16.dp)
             ) {
                 // Task 3: items with key
-                items(scamHistory, key = { it.phoneNumber }) { call ->
+                items(scamHistory, key = { it.id }) { call ->
                     ScamHistoryItem(call = call)
                 }
             }

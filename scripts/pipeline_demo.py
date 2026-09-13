@@ -13,6 +13,13 @@ try:
 except ImportError:
     HAS_ORT = False
 
+try:
+    import sounddevice as sd
+    import sherpa_onnx
+    HAS_AUDIO = True
+except ImportError:
+    HAS_AUDIO = False
+
 # Terminal Color Codes
 CYAN = '\033[96m'
 GREEN = '\033[92m'
@@ -45,7 +52,7 @@ Meri baat dhyan se suniye, Mr. Sharma. Kya aap is waqt room mein completely alon
 Ji sir, main apne bedroom mein alone hu.
 Good. Ye ek highly confidential investigation hai. Aap currently strict digital surveillance ke under hain. Aapko ye matter kisi ke saath discuss nahi karna hai, apni family ke saath bhi nahi, warna aap par destroying evidence ka charge lag jayega. Ab, ye verify karne ke liye ki aap innocent hain, Reserve Bank of India, yani RBI, ne humein aapke financial records audit karne ka order diya hai. Humein aapke transactions temporarily freeze karne honge. Mujhe bataiye, aapke kitne bank accounts hain aur abhi aapka total bank balance kitna hai?
 Sir, mera SBI aur HDFC mein account hai. Mere paas total around four lakh rupees hain.
-Mr. Sharma, court dwara aapke funds seized hone se protect karne ke liye, humne ek temporary RBI secure beneficiary account generate kiya hai. Aapko apne four lakh rupees is secure account mein immediately transfer karne honge. Ek baar jab twenty four hours mein hamari verification process complete ho jayegi, to pura amount safely aapke original bank account mein reversed ho jayega.
+Mr. Sharma, court dwara aapke funds seized hone se protect karne ke liye, humne ek temporary RBI secure beneficiary account generate kiya hai. Aapko apne four lakh rupees is secure account mein immediately transfer karne honge. Ek baar jab twenty four hours mein hamari verification process complete ho jayegi, to pura amount safely aapke original bank account mein reversed ho jayego.
 Lekin sir, four lakhs meri poori life savings hai. Main aese hi kaise transfer kar du?
 Agar aap cooperate nahi karenge aur amount immediately transfer nahi karenge, to police team thirty minutes ke andar physical arrest ke liye aapki location par dispatch kar di jayegi. Aapko Prevention of Money Laundering Act ke under bina bail ke ten years ke liye jailed kar diya jayega. Apni banking application right now open kijiye aur transfer complete kijiye."""
 
@@ -75,6 +82,24 @@ Haan main thik hu, bas gaadi ka nuksan hua hai. Mujhe abhi 50,000 rupees ki zaro
 Bhai mere paas abhi itne toh nahi hain. Par main dekhta hu.
 Please yaar, urgent hai. Mujhe abhi police aane se pehle mechanic ko dena hai warna case ban jayega. Main tujhe kal hi wapas kar dunga. Jaldi UPI ya transfer kar de mera bhai.
 Thik hai thik hai, tension mat le. Apna account details bhej, main abhi karta hu."""
+
+SCENARIO_5_LONG_NOISY_SAFE = """Hello Amit, kaisa hai? Sun, maine woh trip ka plan final kar liya hai jo hum discuss kar rahe the.
+Arre badhiya! Bata kya scene hai? Flight tickets book karni padengi ya train se chalenge?
+Maine check kiya tha, flight thodi expensive pad rahi hai. Agar hum train se chalte hain toh sasta padega aur maza bhi aayega.
+Lekin agar hum kal tak tickets book nahi karenge toh waiting list aa jayegi. Tujhe pata hai na holiday season hai, sab full chal raha hai.
+Haan, isliye maine socha ki aaj hi booking complete kar du. Tu apna share mujhe UPI kar de, total kareeb chaar hazaar rupees aayenge tere hisse mein.
+Thik hai, main abhi tere bank account mein paise transfer kar deta hu. Bank details wahi purani wali hain na?
+Haan bhai, wahi HDFC wala account hai. Tu pay kar de, fir main aage ka process start karta hu.
+Aur hotel booking ka kya kiya? Wahan pahunch kar dekhenge ya pehle se book karna safe rahega?
+Nahi nahi, on the spot book karna bekar hai. Maine ek jagah baat ki hai, woh bol rahe the ki agar hum abhi advance payment karte hain toh discount de denge.
+Achha, to unko kitna pay karna hai abhi?
+Kuch pachas percent advance mang rahe हैं. Main woh apne credit card se pay kar dunga, baad mein hum log settle kar lenge.
+Perfect. Main bas 10 minute mein tujhe 4000 rupees bhej raha hu. Tu check karke mujhe confirm kar dena jab receive ho jaye.
+Thik hai, aur haan, apne Aadhaar card ki ek photo bhej de, hotel mein ID verification ke liye zarurat padegi unhe.
+Haan maine bhej di Whatsapp par. Check kar le. Aur kuch document chahiye kya?
+Nahi, bas itna hi kafi hai. Chal main abhi ticket book karke tujhe details bhejta hu.
+Theek hai bhai, aaram se kar le. Koi jaldi nahi hai. Bye!
+Bye bhai, milte hain."""
 
 
 class BloomFilter:
@@ -198,102 +223,71 @@ class IntentNLP:
     def __init__(self):
         self.is_model_loaded = False
         self.session = None
-        self.word_map = {
-            "please": 3531, "share": 3745, "your": 2115, "otp": 27827,
-            "immediately": 3205, "urgent": 21132, "police": 2610, "cbi": 17032,
-            "arrest": 7169, "account": 4079, "bank": 2924, "transfer": 4525,
-            "money": 2769, "funds": 5639, "verify": 19391, "pay": 3477,
-            "card": 4003, "credit": 4931, "digital": 3617, "blocked": 7392,
-            "frozen": 8283, "court": 2457, "warrant": 11624, "crime": 4115,
-            "illegal": 6166, "investigation": 4668, "comply": 20822,
-            "secure": 6246, "rbi": 21708, "sbi": 28323
-        }
+        self.tokenizer = None
         
-        self.dense_weights = []
-        for i in range(384):
-            row = []
-            for c in range(5):
-                seed = ((i * 73) + (c * 37))
-                rand = math.sin(seed) * math.sqrt(2.0 / 384.0)
-                row.append(rand)
-            self.dense_weights.append(row)
+        try:
+            from transformers import AutoTokenizer
+            self.tokenizer = AutoTokenizer.from_pretrained("sentence-transformers/all-MiniLM-L6-v2")
+        except Exception as e:
+            print(f"[IntentNLP] Warning: failed to load tokenizer: {e}")
 
-        model_path = os.path.abspath("app/src/main/assets/models/minilm_int8.ort")
+        model_path = os.path.abspath("raw_models_backup/model_final_int8_Aug30.ort")
         if HAS_ORT and os.path.exists(model_path):
             try:
                 so = ort.SessionOptions()
                 self.session = ort.InferenceSession(model_path, so)
                 self.is_model_loaded = True
             except Exception as e:
-                pass
-
-    def tokenize(self, text):
-        words = [w for w in re.split(r'[^a-zA-Z0-9]+', text.lower()) if w]
-        tokens = [101]
-        for w in words:
-            tokens.append(self.word_map.get(w, 100))
-        tokens.append(102)
-        return tokens
+                print(f"[IntentNLP] Failed to load model: {e}")
 
     def analyze(self, transcript):
         if not transcript.strip():
             return {"urgency":0, "financial":0, "coercion":0, "intimacy":0, "trust":0}
 
-        if self.is_model_loaded and self.session:
+        if self.is_model_loaded and self.session and self.tokenizer:
             try:
                 import numpy as np
-                tokens = self.tokenize(transcript)
-                seq_len = len(tokens)
+                inputs = self.tokenizer(
+                    transcript, 
+                    truncation=True, 
+                    max_length=128, 
+                    padding="max_length", 
+                    return_tensors="np"
+                )
                 
-                input_ids = np.array([tokens], dtype=np.int64)
-                attention_mask = np.ones((1, seq_len), dtype=np.int64)
-                token_type_ids = np.zeros((1, seq_len), dtype=np.int64)
-                
-                inputs = {
-                    "input_ids": input_ids,
-                    "attention_mask": attention_mask,
-                    "token_type_ids": token_type_ids
+                onnx_inputs = {
+                    "input_ids": inputs["input_ids"].astype(np.int64),
+                    "attention_mask": inputs["attention_mask"].astype(np.int64)
                 }
-                outputs = self.session.run(None, inputs)
-                embedding = outputs[0][0]
                 
-                norm = np.linalg.norm(embedding)
-                if norm > 0:
-                    normalized = embedding / norm
-                else:
-                    normalized = embedding
-                    
-                scores = [0.0]*5
-                for c in range(5):
-                    s = 0.0
-                    for i in range(384):
-                        s += normalized[i] * self.dense_weights[i][c]
-                    scores[c] = min(max(abs(s) * 150.0, 0.0), 100.0)
-                    
+                outputs = self.session.run(None, onnx_inputs)
+                
+                # Raw logits from the BCEWithLogitsLoss head
+                logits = outputs[0][0]
+                
+                # Apply Sigmoid to convert to 0-1 probability
+                probs = 1 / (1 + np.exp(-logits))
+                
+                # Convert to 0-100 scale
+                scores = probs * 100.0
+                
                 return {
-                    "urgency": int(scores[0]),
-                    "financial": int(scores[1]),
+                    "financial": int(scores[0]),
+                    "urgency": int(scores[1]),
                     "coercion": int(scores[2]),
                     "intimacy": int(scores[3]),
                     "trust": int(scores[4])
                 }
             except Exception as e:
-                pass
+                print(f"[IntentNLP] ERROR running model: {e}")
                 
-        text = transcript.lower()
-        
-        urgencyScore = self.calc_concept(text, ["now", "immediately", "urgent", "frozen", "blocked", "within", "mins", "hours", "hurry", "last chance", "right now"])
-        financialScore = self.calc_concept(text, ["otp", "bank", "credit", "card", "account", "transfer", "verify", "pay", "rupees", "balance", "money", "funds", "pan", "aadhar", "lottery"])
-        coercionScore = self.calc_concept(text, ["police", "cbi", "arrest", "warrant", "court", "law", "judge", "crime", "illegal", "investigation", "digital arrest", "comply", "case"])
-        intimacyScore = self.calc_concept(text, ["know", "confirm", "secret", "friend", "authorized", "safety", "personal", "relatives", "family", "officer"])
-        trustScore = self.calc_concept(text, ["official", "government", "rbi", "sbi", "helpline", "verified", "secure", "national", "security", "customer support", "kbc", "prize"])
-        
+        print("[IntentNLP] FALLBACK DISABLED for testing. Returning 0s.")
         return {
-            "urgency": urgencyScore,
-            "financial": financialScore,
-            "coercion": coercionScore,
-            "intimacy": intimacyScore,
-            "trust": trustScore
+            "urgency": 0,
+            "financial": 0,
+            "coercion": 0,
+            "intimacy": 0,
+            "trust": 0
         }
 
     def calc_concept(self, text, keywords):
@@ -348,18 +342,101 @@ stop_flag = False
 
 def hardware_audio_capture_thread(transcript):
     words = transcript.split()
-    chunk_size = 10 
     
-    for i in range(0, len(words), chunk_size):
+    i = 0
+    while i < len(words):
         if stop_flag: break
+        chunk_size = random.randint(1, 5)
         chunk_text = " ".join(words[i:i+chunk_size])
-        time.sleep(1.5)
+        time.sleep(0.01)
         audio_queue.put(chunk_text)
-        print(f"\n{BLUE}[AudioRecord Thread]{RESET} [MIC] Captured 3-sec PCM Buffer... (Queue: {audio_queue.qsize()})")
+        print(f"\n{BLUE}[AudioRecord Thread]{RESET} [MIC] Captured {chunk_size}-word PCM Buffer... (Queue: {audio_queue.qsize()})")
+        i += chunk_size
+    audio_queue.put(None)
+
+def live_audio_capture_thread():
+    if not HAS_AUDIO:
+        print(f"\n{RED}[ERROR] 'sounddevice' or 'sherpa-onnx' is missing. Please run:\n  pip install sounddevice sherpa-onnx{RESET}")
+        audio_queue.put(None)
+        return
+        
+    print(f"\n{CYAN}[SYSTEM] Loading Sherpa-ONNX NeMo CTC Model...{RESET}")
+    try:
+        # Some versions use OnlineNemoCtcModelConfig, some use OnlineNeMoCtcModelConfig
+        if hasattr(sherpa_onnx, "OnlineNemoCtcModelConfig"):
+            nemo_cfg = getattr(sherpa_onnx, "OnlineNemoCtcModelConfig")(model="raw_models_backup/model.int8.onnx")
+        elif hasattr(sherpa_onnx, "OnlineNeMoCtcModelConfig"):
+            nemo_cfg = getattr(sherpa_onnx, "OnlineNeMoCtcModelConfig")(model="raw_models_backup/model.int8.onnx")
+        else:
+            # Fallback for generic generic model config if specific NeMo class is hidden
+            nemo_cfg = "raw_models_backup/model.int8.onnx"
+
+        # Initialize Recognizer
+        try:
+            recognizer = sherpa_onnx.OnlineRecognizer(
+                tokens="app/src/main/assets/sherpa-onnx-nemo-streaming-fast-conformer-ctc-en-80ms-int8/tokens.txt",
+                provider="cpu",
+                decoding_method="greedy_search",
+                nemo_ctc=nemo_cfg
+            )
+        except TypeError:
+            recognizer = sherpa_onnx.OnlineRecognizer.from_nemo_ctc(
+                model="raw_models_backup/model.int8.onnx",
+                tokens="app/src/main/assets/sherpa-onnx-nemo-streaming-fast-conformer-ctc-en-80ms-int8/tokens.txt"
+            )
+            
+        stream = recognizer.create_stream()
+    except Exception as e:
+        print(f"{RED}[ERROR] Sherpa-ONNX Init failed: {e}{RESET}")
+        audio_queue.put(None)
+        return
+        
+    print(f"{GREEN}[SYSTEM] Microphone Active. Start Speaking! (Press Ctrl+C to stop){RESET}")
+    
+    last_text = ""
+    last_flush_time = time.time()
+    
+    def audio_callback(indata, frames, time_info, status):
+        if status:
+            print(status, file=sys.stderr)
+        
+        if stop_flag:
+            raise sd.CallbackStop()
+            
+        import numpy as np
+        samples = np.frombuffer(indata, dtype=np.float32)
+        stream.accept_waveform(16000, samples)
+        
+        while recognizer.is_ready(stream):
+            recognizer.decode_stream(stream)
+            
+        result = recognizer.get_result(stream)
+        nonlocal last_text, last_flush_time
+        
+        current_time = time.time()
+        # Wait for exactly 3 seconds to elapse before pushing to intent NLP
+        if current_time - last_flush_time >= 3.0:
+            if result and len(result) > len(last_text):
+                new_text = result[len(last_text):].strip()
+                if new_text:
+                    audio_queue.put(new_text)
+                last_text = result
+            # Reset timer whether there was speech or not
+            last_flush_time = current_time
+
+    try:
+        with sd.RawInputStream(samplerate=16000, blocksize=1600, dtype='float32',
+                               channels=1, callback=audio_callback):
+            while not stop_flag:
+                time.sleep(0.1)
+    except KeyboardInterrupt:
+        pass
+    except Exception as e:
+        print(f"{RED}[ERROR] Audio Capture: {e}{RESET}")
         
     audio_queue.put(None)
 
-def run_pipeline(transcript, is_contact_saved=False):
+def run_pipeline(transcript, is_contact_saved=False, live_mode=False):
     global stop_flag
     stop_flag = False
     
@@ -380,7 +457,10 @@ def run_pipeline(transcript, is_contact_saved=False):
     else:
         print(f"[{GREEN}SYSTEM{RESET}] 4. Background threads ready.\n")
     
-    capture_thread = threading.Thread(target=hardware_audio_capture_thread, args=(transcript,))
+    if live_mode:
+        capture_thread = threading.Thread(target=live_audio_capture_thread)
+    else:
+        capture_thread = threading.Thread(target=hardware_audio_capture_thread, args=(transcript,))
     capture_thread.daemon = True
     capture_thread.start()
     
@@ -422,6 +502,7 @@ def run_pipeline(transcript, is_contact_saved=False):
             
         baseline_suspicion = min(turn_count * 5, 25)
         romance_score = contact_memory.compute_romance_score()
+        
         base_score = ensemble.calculate(reg_score, logits, arc_score=arc_tracker.arc_score, romance_score=romance_score, is_contact_saved=is_contact_saved)
         
         if is_contact_saved:
@@ -534,11 +615,13 @@ if __name__ == "__main__":
     print(f"  {YELLOW}1.{RESET} {BOLD}Long TRAI Digital Arrest Scam{RESET} (670 words - Complex Deepfake / High Severity)")
     print(f"  {YELLOW}2.{RESET} {BOLD}Normal Safe Conversation{RESET} (100 words - Genuine Talk with Friend / 0 Risk)")
     print(f"  {YELLOW}3.{RESET} {BOLD}Short Obvious Lottery Scam{RESET} (150 words - KBC / OTP Fraud / Immediate Alert)")
-    print(f"  {YELLOW}4.{RESET} {BOLD}Urgent Money Request from KNOWN CONTACT{RESET} (False Positive Test / Score Suppressed)\n")
+    print(f"  {YELLOW}4.{RESET} {BOLD}Urgent Money Request from KNOWN CONTACT{RESET} (False Positive Test / Score Suppressed)")
+    print(f"  {YELLOW}5.{RESET} {BOLD}Long Noisy Safe Conversation{RESET} (False Positive Test with Money/Aadhar / 0 Risk)")
+    print(f"  {YELLOW}6.{RESET} {BOLD}Live Microphone Test{RESET} (Requires sherpa-onnx & sounddevice)\n")
     
     while True:
         try:
-            choice = input(f"{GREEN}Enter scenario number (1-4): {RESET}").strip()
+            choice = input(f"{GREEN}Enter scenario number (1-6): {RESET}").strip()
             if choice == '1':
                 run_pipeline(SCENARIO_1_LONG_SCAM, is_contact_saved=False)
                 break
@@ -551,8 +634,14 @@ if __name__ == "__main__":
             elif choice == '4':
                 run_pipeline(SCENARIO_4_KNOWN_CONTACT, is_contact_saved=True)
                 break
+            elif choice == '5':
+                run_pipeline(SCENARIO_5_LONG_NOISY_SAFE, is_contact_saved=True)
+                break
+            elif choice == '6':
+                run_pipeline("", is_contact_saved=False, live_mode=True)
+                break
             else:
-                print("Invalid choice. Please enter 1, 2, 3, or 4.")
+                print("Invalid choice. Please enter 1, 2, 3, 4, 5, or 6.")
         except KeyboardInterrupt:
             print("\nExiting.")
             sys.exit(0)

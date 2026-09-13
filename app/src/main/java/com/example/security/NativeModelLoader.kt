@@ -14,6 +14,7 @@ object NativeModelLoader {
 
     init {
         try {
+            System.loadLibrary("crypto")
             System.loadLibrary("cyberguard_secrets")
             Log.i(TAG, "Native AI library loaded successfully.")
         } catch (e: UnsatisfiedLinkError) {
@@ -28,6 +29,7 @@ object NativeModelLoader {
      * @param masterKey 32-byte AES master key for decryption.
      * @return A native pointer (Long) to the initialized OrtSession object.
      */
+    @JvmStatic
     external fun loadModelNative(filePath: String, masterKey: ByteArray): Long
 
     /**

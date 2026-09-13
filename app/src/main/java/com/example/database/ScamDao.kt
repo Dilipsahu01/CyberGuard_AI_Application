@@ -16,4 +16,7 @@ interface ScamDao {
 
     @Query("DELETE FROM scam_calls WHERE timestamp < :threshold")
     suspend fun deleteOldRecords(threshold: Long)
+
+    @Query("DELETE FROM scam_calls")
+    suspend fun deleteAllScams()
 }

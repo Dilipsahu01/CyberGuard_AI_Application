@@ -30,7 +30,19 @@ import androidx.compose.ui.unit.sp
  * swap in AsyncImage/Coil with the actual photo URI in a real app.
  */
 
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalContext
+import android.provider.ContactsContract
+import android.content.Intent
+import android.net.Uri
+import androidx.compose.foundation.clickable
+
 private data class ContactEntry(
+    val id: Long,
     val name: String,
     val number: String,
     val expanded: Boolean = false
@@ -41,37 +53,77 @@ private data class ContactSection(
     val contacts: List<ContactEntry>
 )
 
-private val contactSections = listOf(
-    ContactSection("A", listOf(ContactEntry("Amisha", "+917622365663"))),
-    ContactSection(
-        "B",
-        listOf(
-            ContactEntry("Bunty", "+917622365663"),
-            ContactEntry("Brijesh Tiwari", "+917622365663", expanded = true)
-        )
-    ),
-    ContactSection(
-        "C",
-        listOf(
-            ContactEntry("Chotulal Chaudhary", "+917622365663"),
-            ContactEntry("Chandrika Chautala", "+917622365663"),
-            ContactEntry("Chirag Bansal", "+917622365663"),
-            ContactEntry("Chirag Bansal", "+917622365663")
-        )
-    )
-)
-
 @Composable
 fun AllContactsScreen(
-    contactCount: Int = 1930,
     onOpenDialer: () -> Unit = {},
-    onAddContact: () -> Unit = {}
+    onAddContact: () -> Unit = {},
+    onContactClick: (Long) -> Unit = {},
+    onEditContact: (Long) -> Unit = {},
+    onViewCallLogs: () -> Unit = {}
 ) {
+    val context = LocalContext.current
+    var allContacts by remember { mutableStateOf(emptyList<ContactEntry>()) }
+    var searchQuery by remember { mutableStateOf("") }
+    
+    LaunchedEffect(Unit) {
+        val contacts = mutableListOf<ContactEntry>()
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            val projection = arrayOf(
+                ContactsContract.CommonDataKinds.Phone.CONTACT_ID,
+                ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME,
+                ContactsContract.CommonDataKinds.Phone.NUMBER
+            )
+            val cursor = context.contentResolver.query(
+                ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
+                projection, null, null,
+                ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME + " ASC"
+            )
+            cursor?.use {
+                val idIdx = it.getColumnIndex(ContactsContract.CommonDataKinds.Phone.CONTACT_ID)
+                val nameIdx = it.getColumnIndex(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME)
+                val numberIdx = it.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER)
+                
+                while (it.moveToNext()) {
+                    val id = if (idIdx >= 0) it.getLong(idIdx) else 0L
+                    val name = if (nameIdx >= 0) it.getString(nameIdx) ?: "Unknown" else "Unknown"
+                    val number = if (numberIdx >= 0) it.getString(numberIdx) ?: "" else ""
+                    contacts.add(ContactEntry(id, name, number))
+                }
+            }
+        }
+        allContacts = contacts
+    }
+
+    val filteredContacts = remember(allContacts, searchQuery) {
+        if (searchQuery.isBlank()) {
+            allContacts
+        } else {
+            allContacts.filter { 
+                it.name.contains(searchQuery, ignoreCase = true) || 
+                it.number.contains(searchQuery)
+            }
+        }
+    }
+    
+    val contactSections = remember(filteredContacts) {
+        filteredContacts.groupBy { 
+            it.name.firstOrNull()?.uppercase() ?: "#" 
+        }.map { (letter, contacts) ->
+            ContactSection(letter, contacts)
+        }.sortedBy { it.letter }
+    }
+    
+    val contactCount = filteredContacts.size
     Surface(color = Color.White, modifier = Modifier.fillMaxSize()) {
         Box(modifier = Modifier.fillMaxSize()) {
             LazyColumn(modifier = Modifier.fillMaxSize()) {
                 item { AppHeader() }
-                item { SearchBar(showAdd = true, onAddClick = onAddContact) }
+                item { SearchBar(
+                    query = searchQuery,
+                    onQueryChange = { searchQuery = it },
+                    showAdd = true, 
+                    onAddClick = onAddContact
+                ) }
                 item {
                     Column(
                         modifier = Modifier
@@ -93,9 +145,37 @@ fun AllContactsScreen(
                         )
                     }
                 }
-                contactSections.forEach { section ->
-                    item { LetterHeader(section.letter) }
-                    items(section.contacts) { ContactRow(it) }
+                if (filteredContacts.isEmpty()) {
+                    item {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 64.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text("No contacts found. Add one to get started.", color = Gray500)
+                        }
+                    }
+                } else {
+                    contactSections.forEach { section ->
+                        item { LetterHeader(section.letter) }
+                        items(items = section.contacts, key = { "${it.id}_${it.number}" }) { entry -> 
+                            var isExpanded by remember { mutableStateOf(false) }
+                            ContactRow(
+                                entry = entry.copy(expanded = isExpanded),
+                                onClick = { 
+                                    isExpanded = !isExpanded
+                                    onContactClick(entry.id)
+                                },
+                                onCall = {
+                                    val intent = Intent(Intent.ACTION_CALL, Uri.parse("tel:${entry.number}"))
+                                    context.startActivity(intent)
+                                },
+                                onEdit = { onEditContact(entry.id) },
+                                onAllLogs = onViewCallLogs
+                            )
+                        }
+                    }
                 }
                 item { Spacer(Modifier.height(96.dp)) }
             }
@@ -121,10 +201,17 @@ private fun LetterHeader(letter: String) {
 }
 
 @Composable
-private fun ContactRow(entry: ContactEntry) {
+private fun ContactRow(
+    entry: ContactEntry,
+    onClick: () -> Unit,
+    onCall: () -> Unit,
+    onEdit: () -> Unit,
+    onAllLogs: () -> Unit
+) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            .clickable(onClick = onClick)
             .let { if (entry.expanded) it.background(Gray100) else it }
     ) {
         Row(
@@ -159,11 +246,11 @@ private fun ContactRow(entry: ContactEntry) {
             ActionRow(
                 primaryLabel = "Call",
                 primaryIcon = Icons.Filled.Call,
-                onPrimaryClick = {},
+                onPrimaryClick = onCall,
                 secondaryLabel = "Edit",
                 secondaryIcon = Icons.Filled.Edit,
-                onSecondaryClick = {},
-                onAllLogsClick = {},
+                onSecondaryClick = onEdit,
+                onAllLogsClick = onAllLogs,
                 modifier = Modifier.padding(8.dp)
             )
         }

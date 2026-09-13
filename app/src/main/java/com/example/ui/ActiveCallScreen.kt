@@ -62,6 +62,9 @@ fun ActiveCallScreen(
     callDuration: String = "01:24",
     isScamDetected: Boolean = false,
     liveTranscript: String = "",
+    showSwapButton: Boolean = false,
+    onSwap: () -> Unit = {},
+    onToggleHold: () -> Unit = {},
     onEndCall: () -> Unit = {}
 ) {
     val direction by viewModel.callDirection.collectAsStateWithLifecycle()
@@ -69,19 +72,27 @@ fun ActiveCallScreen(
     when (direction) {
         CallDirection.INCOMING -> ActiveCallLayout(
             phoneNumber = phoneNumber,
-            callDuration = "Incoming...",
+            callDuration = callDuration,
             isScamDetected = isScamDetected,
             liveTranscript = liveTranscript,
+            showSwapButton = showSwapButton,
+            onSwap = onSwap,
+            onToggleHold = onToggleHold,
             onEndCall = onEndCall,
-            isIncoming = true
+            isIncoming = true,
+            viewModel = viewModel
         )
         CallDirection.OUTGOING -> ActiveCallLayout(
             phoneNumber = phoneNumber,
             callDuration = callDuration,
             isScamDetected = isScamDetected,
             liveTranscript = liveTranscript,
+            showSwapButton = showSwapButton,
+            onSwap = onSwap,
+            onToggleHold = onToggleHold,
             onEndCall = onEndCall,
-            isIncoming = false
+            isIncoming = false,
+            viewModel = viewModel
         )
         else -> {
             // No UI for missed calls here
@@ -95,19 +106,55 @@ fun ActiveCallLayout(
     callDuration: String,
     isScamDetected: Boolean,
     liveTranscript: String,
+    showSwapButton: Boolean,
+    onSwap: () -> Unit,
+    onToggleHold: () -> Unit,
     onEndCall: () -> Unit,
-    isIncoming: Boolean
+    isIncoming: Boolean,
+    viewModel: ActiveCallViewModel
 ) {
+    val currentOnSwap by androidx.compose.runtime.rememberUpdatedState(onSwap)
+    val currentOnToggleHold by androidx.compose.runtime.rememberUpdatedState(onToggleHold)
+    val currentOnEndCall by androidx.compose.runtime.rememberUpdatedState(onEndCall)
     // States to manage the advanced tools
     var showCaptions by rememberSaveable { mutableStateOf(false) }
     var showNotes by rememberSaveable { mutableStateOf(false) }
     var notesText by rememberSaveable { mutableStateOf("") }
     
+    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
+    
     // States for 6-Button Dialer Grid
-    var isMuted by rememberSaveable { mutableStateOf(false) }
-    var isSpeakerOn by rememberSaveable { mutableStateOf(false) }
-    var isOnHold by rememberSaveable { mutableStateOf(false) }
+    val isMuted by viewModel.isMuted.collectAsStateWithLifecycle()
+    val isSpeakerOn by viewModel.isSpeakerOn.collectAsStateWithLifecycle()
+    val isOnHold by viewModel.isOnHold.collectAsStateWithLifecycle()
+    val isBluetoothOn by viewModel.isBluetoothOn.collectAsStateWithLifecycle()
     var showKeypad by rememberSaveable { mutableStateOf(false) }
+
+    val formattedDuration by viewModel.callElapsedFormatted.collectAsStateWithLifecycle()
+
+    var contactName by remember { mutableStateOf<String?>(null) }
+    val context = androidx.compose.ui.platform.LocalContext.current
+
+    androidx.compose.runtime.LaunchedEffect(phoneNumber) {
+        // Query contact name using ContactsContract on IO Thread
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            val uri = android.net.Uri.withAppendedPath(
+                android.provider.ContactsContract.PhoneLookup.CONTENT_FILTER_URI,
+                android.net.Uri.encode(phoneNumber)
+            )
+            val projection = arrayOf(android.provider.ContactsContract.PhoneLookup.DISPLAY_NAME)
+            context.contentResolver.query(uri, projection, null, null, null)?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val idx = cursor.getColumnIndex(android.provider.ContactsContract.PhoneLookup.DISPLAY_NAME)
+                    if (idx != -1) {
+                        contactName = cursor.getString(idx)
+                    }
+                }
+            }
+        }
+    }
+
+
 
     Surface(color = Color.White, modifier = Modifier.fillMaxSize()) {
         Column(
@@ -125,15 +172,27 @@ fun ActiveCallLayout(
                     modifier = Modifier.size(16.dp)
                 )
                 Spacer(Modifier.width(4.dp))
-                Text(text = callDuration, color = Gray500, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                Text(text = if (isIncoming) "Incoming..." else formattedDuration, color = Gray500, fontSize = 13.sp, fontWeight = FontWeight.Medium)
             }
             Spacer(Modifier.height(8.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 // Pulsing/status indicator dot
+                val infiniteTransition = androidx.compose.animation.core.rememberInfiniteTransition(label = "pulse")
+                val alpha by infiniteTransition.animateFloat(
+                    initialValue = 0.3f,
+                    targetValue = 1f,
+                    animationSpec = androidx.compose.animation.core.infiniteRepeatable(
+                        animation = androidx.compose.animation.core.tween(1000),
+                        repeatMode = androidx.compose.animation.core.RepeatMode.Reverse
+                    ),
+                    label = "alphaPulse"
+                )
+                
                 Box(
                     modifier = Modifier
                         .size(8.dp)
                         .clip(CircleShape)
+                        .graphicsLayer { this.alpha = alpha }
                         .background(if (isScamDetected) AlertRedBorder else Color(0xFF10B981))
                 )
                 Spacer(Modifier.width(6.dp))
@@ -145,44 +204,20 @@ fun ActiveCallLayout(
                 )
             }
 
-            if (isScamDetected) {
+            val isOverlayVisible by viewModel.isOverlayVisible.collectAsStateWithLifecycle()
+            val scamStatus by viewModel.scamStatus.collectAsStateWithLifecycle()
+            val scamScore by viewModel.scamScore.collectAsStateWithLifecycle()
+            
+            if (isScamDetected && isOverlayVisible) {
                 Spacer(Modifier.height(32.dp))
-                // ---- SCAM ALERT BANNER ----
-                Card(
-                    shape = RoundedCornerShape(14.dp),
-                    colors = CardDefaults.cardColors(containerColor = AlertRedBg),
-                    border = BorderStroke(1.dp, AlertRedBorder),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Row(
-                        modifier = Modifier.padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = Icons.Filled.Warning,
-                            contentDescription = "Warning",
-                            tint = AlertRedBorder,
-                            modifier = Modifier.size(28.dp)
-                        )
-                        Spacer(Modifier.width(12.dp))
-                        Column {
-                            Text(
-                                text = "HIGH RISK SCAM DETECTED",
-                                color = AlertRedBorder,
-                                fontSize = 15.sp,
-                                fontWeight = FontWeight.Bold,
-                                letterSpacing = 0.5.sp
-                            )
-                            Spacer(Modifier.height(2.dp))
-                            Text(
-                                text = "AI analysis indicates financial coercion. Hang up immediately.",
-                                color = Gray800,
-                                fontSize = 13.sp,
-                                lineHeight = 18.sp
-                            )
-                        }
+                ScamWarningOverlay(
+                    scamStatus = scamStatus,
+                    scamScore = scamScore,
+                    isOverlayVisible = isOverlayVisible,
+                    onFeedback = { isScam ->
+                        viewModel.dismissOverlayAndSetFeedback(isScam)
                     }
-                }
+                )
             } else {
                 Spacer(Modifier.weight(0.5f))
             }
@@ -212,12 +247,40 @@ fun ActiveCallLayout(
 
                 Spacer(Modifier.height(24.dp))
 
-                Text(
-                    text = phoneNumber,
-                    color = Gray800,
-                    fontSize = 24.sp,
-                    fontWeight = FontWeight.SemiBold
-                )
+                if (showSwapButton) {
+                    androidx.compose.material3.Button(
+                        onClick = currentOnSwap,
+                        colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = Primary),
+                        modifier = Modifier.padding(bottom = 16.dp)
+                    ) {
+                        Icon(Icons.Filled.Dialpad, contentDescription = "Swap Calls") // Using Dialpad icon as generic "switch" placeholder or any standard icon
+                        Spacer(Modifier.width(8.dp))
+                        Text("Swap Call")
+                    }
+                }
+
+                if (contactName != null) {
+                    Text(
+                        text = contactName ?: "",
+                        color = Gray800,
+                        fontSize = 28.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        text = phoneNumber,
+                        color = Gray600,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                } else {
+                    Text(
+                        text = phoneNumber,
+                        color = Gray800,
+                        fontSize = 24.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
                 
                 Spacer(Modifier.height(32.dp))
 
@@ -227,17 +290,25 @@ fun ActiveCallLayout(
                         modifier = Modifier.width(280.dp),
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        CallControlButton(Icons.Filled.MicOff, "Mute", isActive = isMuted) { isMuted = !isMuted }
+                        CallControlButton(Icons.Filled.MicOff, "Mute", isActive = isMuted) { viewModel.toggleMute() }
                         CallControlButton(Icons.Filled.Dialpad, "Keypad", isActive = showKeypad) { showKeypad = !showKeypad }
-                        CallControlButton(Icons.AutoMirrored.Filled.VolumeUp, "Speaker", isActive = isSpeakerOn) { isSpeakerOn = !isSpeakerOn }
+                        CallControlButton(Icons.AutoMirrored.Filled.VolumeUp, "Speaker", isActive = isSpeakerOn) { viewModel.toggleSpeaker() }
                     }
                     Row(
                         modifier = Modifier.width(280.dp),
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        CallControlButton(Icons.Filled.Add, "Add Call", isActive = false) { /* TelecomManager Add Call logic */ }
-                        CallControlButton(Icons.Filled.Pause, "Hold", isActive = isOnHold) { isOnHold = !isOnHold }
-                        CallControlButton(Icons.Filled.Bluetooth, "Bluetooth", isActive = false) { /* Audio Route selector */ }
+                        CallControlButton(
+                            icon = Icons.Filled.Add,
+                            label = "Add Call",
+                            isActive = false,
+                            onClick = {
+                                // TODO(backend): Implement conference calling via Telecom API
+                                android.widget.Toast.makeText(context, "Conference calling coming soon", android.widget.Toast.LENGTH_SHORT).show()
+                            }
+                        )
+                        CallControlButton(Icons.Filled.Pause, "Hold", isActive = isOnHold) { currentOnToggleHold() }
+                        CallControlButton(Icons.Filled.Bluetooth, "Bluetooth", isActive = isBluetoothOn) { viewModel.toggleBluetooth() }
                     }
                 }
                 
@@ -307,7 +378,10 @@ fun ActiveCallLayout(
                         .height(72.dp)
                         .clip(RoundedCornerShape(14.dp))
                         .background(RedEndCall)
-                        .clickable(onClick = onEndCall),
+                        .clickable(onClick = {
+                            haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove)
+                            currentOnEndCall()
+                        }),
                     horizontalArrangement = Arrangement.Center,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -331,7 +405,10 @@ fun ActiveCallLayout(
                         .size(64.dp)
                         .clip(CircleShape)
                         .background(RedEndCall)
-                        .clickable(onClick = onEndCall),
+                        .clickable(onClick = {
+                            haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove)
+                            currentOnEndCall()
+                        }),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
@@ -357,7 +434,10 @@ private fun CallControlButton(icon: ImageVector, label: String, isActive: Boolea
                 .clip(CircleShape)
                 .background(bgColor)
                 .border(width = 1.dp, color = if (isActive) Color(0xFF004B71) else BorderGray, shape = CircleShape)
-                .clickable(onClick = onClick),
+                .clickable(onClick = {
+                    haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove)
+                    onClick()
+                }),
             contentAlignment = Alignment.Center
         ) {
             Icon(imageVector = icon, contentDescription = label, tint = tintColor, modifier = Modifier.size(24.dp))

@@ -8,12 +8,12 @@ package com.example.pipeline
 
 /**
  * StreamingASR.kt
- * 
- * PURPOSE: 
+ *
+ * PURPOSE:
  * Wraps the Sherpa-ONNX Fast Conformer model for local Speech-to-Text.
- * 
+ *
  * WHY IT EXISTS:
- * Processes raw 16kHz audio waves into text strings (Hinglish supported) in real-time. 
+ * Processes raw 16kHz audio waves into text strings (Hinglish supported) in real-time.
  * This enables privacy-first transcription without ever sending the user's voice to a cloud API.
  */
 import android.content.Context
@@ -22,7 +22,7 @@ import com.k2fsa.sherpa.onnx.OnlineRecognizer
 import com.k2fsa.sherpa.onnx.OnlineStream
 import com.k2fsa.sherpa.onnx.getOnlineRecognizerConfig
 
-class StreamingASR(context: Context) {
+class StreamingASR(private val context: Context) {
     private val tag = "StreamingASR"
     private var recognizer: OnlineRecognizer? = null
     private var stream: OnlineStream? = null
@@ -36,26 +36,24 @@ class StreamingASR(context: Context) {
             val assetList = assetManager.list("") ?: emptyArray()
             val modelDirName = assetList.find { it.startsWith("sherpa-onnx") }
                 ?: "sherpa-onnx-nemo-streaming-fast-conformer-ctc-en-80ms-int8"
-            
+
             val modelType = when {
                 modelDirName.contains("whisper", ignoreCase = true) -> "whisper"
                 modelDirName.contains("zipformer", ignoreCase = true) -> "zipformer2"
                 else -> "nemo_ctc"
             }
-            
+
             Log.i(tag, "Dynamic ASR model discovery selected: $modelDirName (Type: $modelType)")
-            
-            // 1. Decrypt the model to a secure directory (since Sherpa-ONNX requires physical files)
-            val secureDir = java.io.File(context.noBackupFilesDir, "secure_models")
-            if (!secureDir.exists()) secureDir.mkdirs()
-            
+
+            // 1. Decrypt the model to a secure directory
             val decryptedModelFile = com.example.security.ModelCryptoManager.decryptModelToCache(
-                context, 
-                "$modelDirName/model.int8.onnx", 
+                context,
+                "$modelDirName/model.int8.onnx",
                 "model.int8.onnx"
             )
-            
+
             // 2. Copy tokens.txt to the same directory
+            val secureDir = java.io.File(context.noBackupFilesDir, "secure_models")
             val tokensFile = java.io.File(secureDir, "tokens.txt")
             if (!tokensFile.exists()) {
                 context.assets.open("$modelDirName/tokens.txt").use { input ->
@@ -64,19 +62,24 @@ class StreamingASR(context: Context) {
                     }
                 }
             }
-            
+
             val config = getOnlineRecognizerConfig(
                 modelDir = secureDir.absolutePath,
                 type = modelType,
                 numThreads = 2,
             )
-            // Sherpa-ONNX uses provider in config.modelConfig.provider. We set it to "nnapi" if possible.
             config.modelConfig.provider = "nnapi"
-            
-            // Initialize without AssetManager to force reading from the physical decrypted file
+
+            // Initialize engine
             recognizer = OnlineRecognizer(assetManager = null, config = config)
             stream = recognizer?.createStream()
-            Log.d(tag, "Sherpa-ONNX Engine Loaded Successfully from secure cache with NNAPI delegate!")
+            Log.d(tag, "Sherpa-ONNX Engine Loaded Successfully!")
+
+            // MANDATE: IP Protection (V1.1_Updates Section 1)
+            // Immediately purge the decrypted weights from disk after loading into RAM.
+            // This closes the window for extraction on rooted devices.
+            com.example.security.ModelCryptoManager.purgeModelCache(context)
+
         } catch (e: Exception) {
             Log.e(tag, "Failed to load Sherpa-ONNX: ${e.message}")
         }
@@ -96,7 +99,7 @@ class StreamingASR(context: Context) {
         }
 
         val accumulatedText = recognizerLocal.getResult(streamLocal).text
-        
+
         var delta = ""
         val currentLen = accumulatedText.length
         if (currentLen > lastProcessedLength) {
@@ -104,7 +107,7 @@ class StreamingASR(context: Context) {
             lastProcessedLength = currentLen
             fullTranscript = accumulatedText
         }
-        
+
         return delta
     }
 
@@ -122,5 +125,7 @@ class StreamingASR(context: Context) {
         } catch (e: Exception) {
             Log.e(tag, "Failed to release recognizer: ${e.message}")
         }
+        // Final sweep for any remaining cache
+        com.example.security.ModelCryptoManager.purgeModelCache(context)
     }
 }

@@ -21,6 +21,11 @@ import android.util.Log
 import androidx.core.content.ContextCompat
 import com.example.utils.Constants
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
+
+enum class CallUiState { RINGING, ACTIVE, HELD, DIALING }
 
 class CyberGuardInCallService : InCallService() {
     private val tag = "CyberGuardInCall"
@@ -30,23 +35,49 @@ class CyberGuardInCallService : InCallService() {
     companion object {
         var activeCall: Call? = null
         var instance: CyberGuardInCallService? = null
+        
+        data class CallSession(
+            val call: Call,
+            val direction: Int,
+            var hasReachedActive: Boolean = false,
+            val startTime: Long = System.currentTimeMillis(),
+            var state: CallUiState = CallUiState.RINGING,
+            val rawNumber: String,
+            var userFeedback: String? = null,
+            var callback: Call.Callback? = null
+        )
+        val callSessions = java.util.concurrent.ConcurrentHashMap<Call, CallSession>()
 
-        fun disconnectCall() {
-            activeCall?.let {
-                Log.d("CyberGuardInCall", "Requested Hangup. Disconnecting active telecom line...")
+        private val _activeCallsFlow = MutableStateFlow<List<CallSession>>(emptyList())
+        val activeCallsFlow = _activeCallsFlow.asStateFlow()
+
+        private fun updateActiveCallsFlow() {
+            _activeCallsFlow.value = callSessions.values.toList()
+        }
+
+        fun setUserFeedback(feedback: String, call: Call? = activeCall) {
+            call?.let {
+                callSessions[it]?.userFeedback = feedback
+                updateActiveCallsFlow()
+            }
+        }
+
+        fun disconnectCall(call: Call? = activeCall) {
+            call?.let {
+                Log.d("CyberGuardInCall", "Requested Hangup. Disconnecting specific telecom line...")
                 it.disconnect()
             }
         }
 
-        fun answerCall() {
-            activeCall?.let {
-                Log.d("CyberGuardInCall", "Answering active telecom call line...")
+        fun answerCall(call: Call? = activeCall) {
+            call?.let {
+                Log.d("CyberGuardInCall", "Answering specific telecom call line...")
                 it.answer(android.telecom.VideoProfile.STATE_AUDIO_ONLY)
             }
         }
 
-        fun holdCall(hold: Boolean) {
-            activeCall?.let {
+        fun holdCall(hold: Boolean, call: Call? = activeCall) {
+            call?.let {
                 if (hold) it.hold() else it.unhold()
             }
         }
@@ -85,6 +116,24 @@ class CyberGuardInCallService : InCallService() {
         val handle = call.details.handle
         val rawNumber = android.net.Uri.decode(handle?.schemeSpecificPart) ?: "Unknown Caller"
 
+        val activeCallDirection = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+            call.details.callDirection
+        } else {
+            if (call.details.state == Call.STATE_DIALING || call.details.state == Call.STATE_CONNECTING) {
+                android.telecom.Call.Details.DIRECTION_OUTGOING
+            } else {
+                android.telecom.Call.Details.DIRECTION_INCOMING
+            }
+        }
+        val initialState = if (activeCallDirection == android.telecom.Call.Details.DIRECTION_OUTGOING) CallUiState.DIALING else CallUiState.RINGING
+        callSessions[call] = CallSession(
+            call = call,
+            direction = activeCallDirection,
+            state = initialState,
+            rawNumber = rawNumber
+        )
+        updateActiveCallsFlow()
+
         // High-Speed Read Optimization: Instant threat check on a background coroutine
         kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
             try {
@@ -92,11 +141,13 @@ class CyberGuardInCallService : InCallService() {
                 val dotScammer = db.dotScammerDao().getScammer(com.example.utils.PhoneNumberUtils.normalize(rawNumber))
                 if (dotScammer != null) {
                     Log.e("TELECOM_DEBUG", "IMMEDIATE SCAM MATCH: Number $rawNumber found in offline Room DB! Category: ${dotScammer.threatCategory}")
+                    com.example.utils.CallStateBroadcaster.updateTelemetry(com.example.utils.TelemetryUpdate(100, "KNOWN SCAMMER (DoT Blacklist Match)", "DoT_Blacklist", rawNumber, "BLOCKLIST", 100, 100, 100, 0, 0, true))
                 } else {
                     val pipeline = com.example.pipeline.PipelineSingleton.getInstance(applicationContext)
                     val isInBloomFilter = pipeline.isScamCallerNumber(rawNumber)
                     if (isInBloomFilter) {
                         Log.e("TELECOM_DEBUG", "IMMEDIATE SCAM MATCH: Number $rawNumber flagged by in-memory Bloom Filter!")
+                        com.example.utils.CallStateBroadcaster.updateTelemetry(com.example.utils.TelemetryUpdate(100, "KNOWN SCAMMER (Bloom Filter Match)", "Bloom_Filter", rawNumber, "BLOCKLIST", 100, 100, 100, 0, 0, true))
                     }
                 }
             } catch (e: Exception) {
@@ -104,32 +155,49 @@ class CyberGuardInCallService : InCallService() {
             }
         }
 
-        call.registerCallback(
-            object : Call.Callback() {
+        val callCallback = object : Call.Callback() {
                 override fun onStateChanged(call: Call, state: Int) {
                     super.onStateChanged(call, state)
                     Log.d(tag, "Call State Changed: $state")
 
                     when (state) {
                         Call.STATE_ACTIVE -> {
+                            callSessions[call]?.let { session ->
+                                session.hasReachedActive = true
+                                session.state = CallUiState.ACTIVE
+                            }
+                            updateActiveCallsFlow()
                             Log.e("TELECOM_DEBUG", "Call Answered. Booting voice recognition stream listener...")
-                            startScamDetectionService(rawNumber)
+                            startScamDetectionService(rawNumber, callSessions[call]?.direction ?: -1)
+                        }
+                        Call.STATE_HOLDING -> {
+                            callSessions[call]?.state = CallUiState.HELD
+                            updateActiveCallsFlow()
                         }
                         Call.STATE_DISCONNECTED -> {
                             Log.e("TELECOM_DEBUG", "Call ended. Terminating speech-monitors and popping UI backstack...")
-                            com.example.utils.CallStateBroadcaster.endCall()
-                            stopScamDetectionService()
+                            logCallToDatabase(rawNumber, call)
+                            callSessions[call]?.callback?.let { call.unregisterCallback(it) }
+                            callSessions.remove(call)
+                            updateActiveCallsFlow()
+                            
+                            if (callSessions.isEmpty()) {
+                                com.example.utils.CallStateBroadcaster.endCall()
+                                stopScamDetectionService()
+                            }
                         }
                     }
                 }
             }
-        )
+            
+        callSessions[call]?.callback = callCallback
+        call.registerCallback(callCallback)
 
         // Instantly display our high-performance call screen overlay activity
         val context = applicationContext
         val intent = Intent(context, com.example.IncomingCallActivity::class.java).apply {
             putExtra(Constants.EXTRA_CALLER_NUMBER, rawNumber)
-            putExtra("is_incoming", true)
+            putExtra("call_direction", activeCallDirection)
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
         }
         context.startActivity(intent)
@@ -141,8 +209,14 @@ class CyberGuardInCallService : InCallService() {
         if (activeCall == call) {
             activeCall = null
         }
-        com.example.utils.CallStateBroadcaster.endCall()
-        stopScamDetectionService()
+        callSessions[call]?.callback?.let { call.unregisterCallback(it) }
+        callSessions.remove(call)
+        updateActiveCallsFlow()
+        
+        if (callSessions.isEmpty()) {
+            com.example.utils.CallStateBroadcaster.endCall()
+            stopScamDetectionService()
+        }
     }
 
     @Suppress("DEPRECATION")
@@ -152,10 +226,11 @@ class CyberGuardInCallService : InCallService() {
         Log.e("TELECOM_DEBUG", "onCallAudioStateChanged: $audioState")
     }
 
-    private fun startScamDetectionService(number: String) {
+    private fun startScamDetectionService(number: String, direction: Int) {
         val intent = Intent(this, ScamDetectionService::class.java).apply {
             putExtra(Constants.EXTRA_CALLER_NUMBER, number)
             putExtra("is_scam_scenario", false)
+            putExtra("call_direction", direction)
         }
         try {
             startService(intent)
@@ -166,6 +241,41 @@ class CyberGuardInCallService : InCallService() {
 
     private fun stopScamDetectionService() {
         stopService(Intent(this, ScamDetectionService::class.java))
+    }
+
+    private fun logCallToDatabase(rawNumber: String, call: Call) {
+        val session = callSessions[call] ?: return
+        val duration = if (session.hasReachedActive) ((System.currentTimeMillis() - session.startTime) / 1000).toInt() else 0
+        val finalDirection = if (session.hasReachedActive) session.direction else 2 // 2 = MISSED
+
+        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+            try {
+                val db = com.example.models.ScamDatabase.getDatabase(applicationContext)
+                val mgr = com.example.pipeline.PipelineSingleton.getInstance(applicationContext)
+                val finalResult = mgr.getLatestResult()
+                val score = finalResult?.score ?: 0
+                val settings = getSharedPreferences("cyberguard_settings", Context.MODE_PRIVATE)
+                val threshold = settings.getInt("alert_threshold", 70)
+                val isScam = score >= threshold
+                val scrubbedTranscript = com.example.utils.TranscriptScrubber.scrub(finalResult?.transcript ?: "")
+
+                val log = com.example.models.CallLog(
+                    callerNumber = rawNumber,
+                    timestamp = session.startTime,
+                    riskScore = score,
+                    isScam = isScam,
+                    transcript = scrubbedTranscript,
+                    hitKeywords = finalResult?.hitWord ?: "",
+                    durationSeconds = duration,
+                    wasBlocked = isScam,
+                    direction = finalDirection,
+                    userFeedback = session.userFeedback
+                )
+                db.callLogDao().insertLog(log)
+            } catch (e: Exception) {
+                Log.e(tag, "Failed to log call to database: ${e.message}")
+            }
+        }
     }
 
     override fun onDestroy() {

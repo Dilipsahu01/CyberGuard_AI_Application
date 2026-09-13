@@ -55,8 +55,8 @@ class ArcTracker {
         detectedTopics.addAll(newTopics)
         turnCount++
         
-        val phase = classifyPhase(newTopics)
-        if (phase != ArcPhase.UNKNOWN) {
+        val detectedPhases = classifyPhases(newTopics)
+        for (phase in detectedPhases) {
             if (phasesSeen.isEmpty() || phasesSeen.last() != phase) {
                 phasesSeen.add(phase)
             }
@@ -65,12 +65,13 @@ class ArcTracker {
         arcScore = computeArcScore()
     }
 
-    private fun classifyPhase(topics: Set<String>): ArcPhase {
-        if ("financial_request" in topics) return ArcPhase.REQUEST
-        if ("problem_frame" in topics || "urgency_signal" in topics) return ArcPhase.PROBLEM_ESTABLISH
-        if ("trust_signal" in topics || "authority_claim" in topics || "personal_info" in topics) return ArcPhase.TRUST_BUILD
-        if ("prize_signal" in topics) return ArcPhase.INTRO
-        return ArcPhase.UNKNOWN
+    private fun classifyPhases(topics: Set<String>): List<ArcPhase> {
+        val phases = mutableListOf<ArcPhase>()
+        if ("prize_signal" in topics) phases.add(ArcPhase.INTRO)
+        if ("trust_signal" in topics || "authority_claim" in topics || "personal_info" in topics) phases.add(ArcPhase.TRUST_BUILD)
+        if ("problem_frame" in topics || "urgency_signal" in topics) phases.add(ArcPhase.PROBLEM_ESTABLISH)
+        if ("financial_request" in topics) phases.add(ArcPhase.REQUEST)
+        return phases
     }
 
     private fun computeArcScore(): Float {

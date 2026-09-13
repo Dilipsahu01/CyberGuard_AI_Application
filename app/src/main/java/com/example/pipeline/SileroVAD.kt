@@ -42,15 +42,16 @@ class SileroVAD(context: Context) {
     init {
         try {
             env = OrtEnvironment.getEnvironment()
-            val modelPath = getModelPath(context)
-            if (modelPath != null) {
-                // Load from path to allow memory-mapping (saves JVM heap)
-                session = env?.createSession(modelPath)
+            val modelBytes = getModelBytes(context)
+            if (modelBytes != null) {
+                // Load from byte array to enforce RAM-only IP protection
+                session = env?.createSession(modelBytes)
+                modelBytes.fill(0) // Wipe RAM
                 isModelLoaded = true
-                Log.d(TAG, "Silero VAD ONNX successfully loaded via path: $modelPath")
+                Log.d(TAG, "Silero VAD ONNX successfully loaded via RAM byte array")
                 Log.d(TAG, "Silero VAD expected inputs: ${session?.inputNames}")
             } else {
-                Log.w(TAG, "Silero VAD ONNX model path was null. Fallback activated.")
+                Log.w(TAG, "Silero VAD ONNX model bytes were null. Fallback activated.")
             }
         } catch (e: Exception) {
             Log.w(TAG, "ONNX failed to load Silero VAD, utilizing dynamic acoustic-energy fallback: ${e.message}")
@@ -91,23 +92,26 @@ class SileroVAD(context: Context) {
                 "state" to stateTensor
             )
 
-            val outputs = sessionLocal.run(inputs)
-            val outputTensor = outputs[0] as OnnxTensor
-            @Suppress("UNCHECKED_CAST")
-            val outputFloat = ((outputTensor.value as? Array<FloatArray>)?.get(0)?.get(0)) ?: 0f
+            var outputs: ai.onnxruntime.OrtSession.Result? = null
+            try {
+                outputs = sessionLocal.run(inputs)
+                val outputTensor = outputs[0] as OnnxTensor
+                @Suppress("UNCHECKED_CAST")
+                val outputFloat = ((outputTensor.value as? Array<FloatArray>)?.get(0)?.get(0)) ?: 0f
 
-            val nextState = outputs[1] as OnnxTensor
-            @Suppress("UNCHECKED_CAST")
-            val nextStateVal = nextState.value as? Array<Array<FloatArray>>
-            if (nextStateVal != null) vadState = nextStateVal
+                val nextState = outputs[1] as OnnxTensor
+                @Suppress("UNCHECKED_CAST")
+                val nextStateVal = nextState.value as? Array<Array<FloatArray>>
+                if (nextStateVal != null) vadState = nextStateVal
 
-            outputs.close()
-            inputTensor.close()
-            srTensor.close()
-            stateTensor.close()
-
-            // Return speech probability
-            outputFloat > 0.5f
+                // Return speech probability
+                outputFloat > 0.5f
+            } finally {
+                outputs?.close()
+                inputTensor.close()
+                srTensor.close()
+                stateTensor.close()
+            }
 
         } catch (e: Exception) {
             Log.e(TAG, "VAD Inference exception: ${e.message}, returning fallback.")
@@ -154,6 +158,9 @@ class SileroVAD(context: Context) {
     fun close() {
         try {
             session?.close()
+            session = null
+            env?.close()
+            env = null
         } catch (e: Exception) {
             Log.e(TAG, "Error closing SileroVAD: ${e.message}")
         }
@@ -161,28 +168,20 @@ class SileroVAD(context: Context) {
 
     companion object {
         private const val TAG = "SileroVAD"
-        @Volatile private var cachedModelPath: String? = null
-        private val lock = Any()
 
-        private fun getModelPath(context: Context): String? {
-            synchronized(lock) {
-                if (cachedModelPath == null) {
-                    try {
-                        // V1.1_Updates Section 1: Secure Runtime Pipeline
-                        // Decrypt to a secure file in internal storage for memory-mapping
-                        val decryptedFile = com.example.security.ModelCryptoManager.decryptModelToCache(
-                            context,
-                            "models/silero_vad.ort.enc",
-                            "silero_vad.ort"
-                        )
-                        cachedModelPath = decryptedFile.absolutePath
-                        Log.i(TAG, "Successfully decrypted silero_vad.ort to secure cache: $cachedModelPath")
-                    } catch (e: Exception) {
-                        Log.e(TAG, "FATAL: Failed to load/decrypt silero_vad.ort: ${e.message}")
-                        // We intentionally crash or fallback if security fails, we do not bypass!
-                    }
+        private fun getModelBytes(context: Context): ByteArray? {
+            try {
+                // V1.1_Updates Section 1: Secure Runtime Pipeline
+                // Decrypt directly to RAM array
+                return context.assets.open("models/silero_vad.ort.enc").use { input ->
+                    com.example.security.ModelCryptoManager.decryptModelToByteArray(
+                        input,
+                        "silero_vad.ort"
+                    )
                 }
-                return cachedModelPath
+            } catch (e: Exception) {
+                Log.e(TAG, "FATAL: Failed to load/decrypt silero_vad.ort: ${e.message}")
+                return null
             }
         }
     }

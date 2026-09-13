@@ -95,3 +95,17 @@ flowchart.txt
 Thumbs.db
 ehthumbs.db
 .kotlin/
+
+# ── Untracked Scratch & Backup Files ──────────────────────────────────────────
+raw_models_backup/
+New_Dataset/
+server/server_bin
+server/server.log
+test_model*.py
+inf_test.txt
+internship-iitbombay.txt
+yc-application.txt
+10Aug.md
+ip.md
+security_audit_report.md
+docs/security_audit_report.artifact.md

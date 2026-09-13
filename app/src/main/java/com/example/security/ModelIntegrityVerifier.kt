@@ -15,7 +15,8 @@ object ModelIntegrityVerifier {
     private val expectedHashes = mapOf(
         "minilm_int8.ort" to "32e4d2bbf95ed14ae65f137548843e9019a14e6db6a36ab3d7c46131376c4e14",
         "silero_vad.ort" to "1a153a22f4509e292a94e67d6f9b85e8deb25b4988682b7e174c65279d8788e3",
-        "model.int8.onnx" to "bf402c371a293707e90413c5df85484c8bc3aaa7081289c0007aab5ee8ac8e22"
+        "model.int8.onnx" to "bf402c371a293707e90413c5df85484c8bc3aaa7081289c0007aab5ee8ac8e22",
+        "model_final_int8_Aug30.ort" to "1dc9ab1b98e319e9b08f6a914e34d1e35754c594ce7296acb08c1a8bc02d8695"
     )
 
     fun verifyByteArray(bytes: ByteArray, originalName: String): Boolean {

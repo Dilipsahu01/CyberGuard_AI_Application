@@ -96,6 +96,7 @@ fun CallRecordingsScreen(
 @Composable
 private fun RecordingCard(entry: RecordingEntry) {
     val isPlaying = entry.progress != null
+    val context = androidx.compose.ui.platform.LocalContext.current
 
     ElevatedCard(
         shape = RoundedCornerShape(12.dp),
@@ -151,7 +152,10 @@ private fun RecordingCard(entry: RecordingEntry) {
 
             Spacer(Modifier.width(8.dp))
 
-            IconButton(onClick = { /* Play/Pause */ }) {
+            IconButton(onClick = { 
+                // TODO(backend): Implement Media3/ExoPlayer playback for recordings 
+                android.widget.Toast.makeText(context, "Playback not implemented yet", android.widget.Toast.LENGTH_SHORT).show()
+            }) {
                 Icon(
                     imageVector = if (isPlaying) Icons.Filled.PauseCircle else Icons.Filled.PlayCircle,
                     contentDescription = if (isPlaying) "Pause" else "Play",

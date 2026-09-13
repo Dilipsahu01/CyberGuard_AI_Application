@@ -58,13 +58,13 @@ android {
     compose = true
     buildConfig = true
   }
-  testOptions { 
-    unitTests { 
+  testOptions {
+    unitTests {
       isIncludeAndroidResources = true
       all {
         it.jvmArgs("-Xshare:off")
       }
-    } 
+    }
   }
   packaging {
     jniLibs {
@@ -84,11 +84,17 @@ android {
   kotlinOptions {
     jvmTarget = "11"
   }
-  
+
   externalNativeBuild {
     cmake {
       path = file("src/main/cpp/CMakeLists.txt")
       version = "3.22.1"
+    }
+  }
+
+  sourceSets {
+    getByName("main") {
+      jniLibs.srcDir("src/main/cpp/openssl/libs")
     }
   }
 }
@@ -128,6 +134,7 @@ dependencies {
   implementation(libs.androidx.navigation.compose)
   implementation(libs.androidx.room.ktx)
   implementation(libs.androidx.room.runtime)
+  implementation(libs.sqlcipher.android)
   // implementation(libs.coil.compose)
   implementation(libs.converter.moshi)
   // implementation(libs.firebase.ai)

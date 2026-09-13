@@ -42,8 +42,7 @@ import android.Manifest
 
 @Composable
 fun PermissionsOnboardingScreen(
-    onGrantPermissions: () -> Unit = {},
-    onSkip: () -> Unit = {}
+    onGrantPermissions: () -> Unit = {}
 ) {
     var hasAcceptedDisclosure by remember { mutableStateOf(false) }
 
@@ -54,7 +53,7 @@ fun PermissionsOnboardingScreen(
                 onDecline = { exitProcess(0) }
             )
         } else {
-            SystemPermissionsScreen(onGrantPermissions, onSkip)
+            SystemPermissionsScreen(onGrantPermissions)
         }
     }
 }
@@ -172,9 +171,11 @@ private fun DisclosureItem(title: String, description: String) {
 }
 
 @Composable
-private fun SystemPermissionsScreen(onGrantPermissions: () -> Unit, onSkip: () -> Unit = {}) {
+private fun SystemPermissionsScreen(onGrantPermissions: () -> Unit) {
     val scrollState = rememberScrollState()
     val context = LocalContext.current
+    val activity = context as? androidx.activity.ComponentActivity
+    var showSettingsDialog by remember { mutableStateOf(false) }
 
     val dialerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
@@ -196,13 +197,26 @@ private fun SystemPermissionsScreen(onGrantPermissions: () -> Unit, onSkip: () -
 
     val standardPermissionsLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
-    ) { _ ->
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            val roleManager = context.getSystemService(Context.ROLE_SERVICE) as RoleManager
-            val intent = roleManager.createRequestRoleIntent(RoleManager.ROLE_CALL_SCREENING)
-            callScreenerLauncher.launch(intent)
-        } else {
+    ) { result ->
+        val allGranted = result.values.all { it }
+        if (!allGranted) {
+            val permanentlyDenied = result.keys.any { perm ->
+                result[perm] == false && activity?.let { 
+                    !androidx.core.app.ActivityCompat.shouldShowRequestPermissionRationale(it, perm) 
+                } == true
+            }
+            if (permanentlyDenied) {
+                showSettingsDialog = true
+            }
             onGrantPermissions()
+        } else {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val roleManager = context.getSystemService(Context.ROLE_SERVICE) as RoleManager
+                val intent = roleManager.createRequestRoleIntent(RoleManager.ROLE_CALL_SCREENING)
+                callScreenerLauncher.launch(intent)
+            } else {
+                onGrantPermissions()
+            }
         }
     }
 
@@ -260,13 +274,15 @@ private fun SystemPermissionsScreen(onGrantPermissions: () -> Unit, onSkip: () -
 
         Button(
             onClick = {
-                standardPermissionsLauncher.launch(
-                    arrayOf(
-                        Manifest.permission.RECORD_AUDIO,
-                        Manifest.permission.READ_CALL_LOG,
-                        Manifest.permission.READ_CONTACTS
-                    )
+                val permissions = mutableListOf(
+                    Manifest.permission.RECORD_AUDIO,
+                    Manifest.permission.READ_CALL_LOG,
+                    Manifest.permission.READ_CONTACTS
                 )
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    permissions.add(Manifest.permission.POST_NOTIFICATIONS)
+                }
+                standardPermissionsLauncher.launch(permissions.toTypedArray())
             },
             modifier = Modifier
                 .fillMaxWidth()
@@ -276,12 +292,30 @@ private fun SystemPermissionsScreen(onGrantPermissions: () -> Unit, onSkip: () -
         ) {
             Text("Start Granting Permissions", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
         }
-        
-        Spacer(Modifier.height(12.dp))
-        
-        TextButton(onClick = onSkip) {
-            Text("Bypass Onboarding (Dev Mode)", color = Gray500, fontWeight = FontWeight.Medium)
-        }
+    }
+
+    if (showSettingsDialog) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { showSettingsDialog = false },
+            title = { Text("Permissions Required") },
+            text = { Text("You have permanently denied some required permissions. Please click 'Open Settings' to enable them manually.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showSettingsDialog = false
+                    val intent = android.content.Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                        data = android.net.Uri.fromParts("package", context.packageName, null)
+                    }
+                    context.startActivity(intent)
+                }) {
+                    Text("Open Settings", color = Primary)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showSettingsDialog = false }) {
+                    Text("Cancel", color = Gray800)
+                }
+            }
+        )
     }
 }
 

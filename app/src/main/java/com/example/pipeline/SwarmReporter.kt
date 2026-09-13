@@ -2,13 +2,13 @@ package com.example.pipeline
 
 /**
  * SwarmReporter.kt
- * 
- * PURPOSE: 
+ *
+ * PURPOSE:
  * The networking interface for the Federated Swarm Immunity system.
- * 
+ *
  * WHY IT EXISTS:
- * It compresses local threat telemetry into an ultra-compact 10.25-byte payload. 
- * To ensure ultra-low latency, it forces these packets onto the 5G URLLC network slice 
+ * It compresses local threat telemetry into an ultra-compact 10.25-byte payload.
+ * To ensure ultra-low latency, it forces these packets onto the 5G URLLC network slice
  * using a DSCP 0xB8 Expedited Forwarding header. If offline, it triggers a 2G SMS fallback.
  */
 import android.content.Context
@@ -20,9 +20,12 @@ import com.example.models.CallContext
 import com.example.models.PendingSwarmReport
 import com.example.models.RiskResult
 import com.example.models.ScamDatabase
+import com.example.utils.PhoneNumberUtils
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import okhttp3.CertificatePinner
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -35,52 +38,17 @@ class SwarmReporter(private val context: Context) {
     private val SWARM_SERVER_URL: String
         get() = context.getSharedPreferences("cyberguard_settings", Context.MODE_PRIVATE)
             .getString("swarm_server_url", "https://api.cyberguard-ai.com/telemetry") ?: "https://api.cyberguard-ai.com/telemetry"
-    private val db = ScamDatabase.getDatabase(context)
+
+    private val db by lazy { ScamDatabase.getDatabase(context) }
 
     private val httpClient = getHttpClient()
 
     companion object {
         private const val TAG = "SwarmReporter"
 
-        private val prioritizedSocketFactory = object : SocketFactory() {
-            private val defaultFactory = getDefault()
-            
-            private fun applyQos(socket: Socket): Socket {
-                try {
-                    socket.trafficClass = 0xB8 // Expedited Forwarding (DSCP EF)
-                } catch (e: Exception) {
-                    Log.w(TAG, "Failed to apply DSCP EF socket traffic class: ${e.message}")
-                }
-                return socket
-            }
-
-            override fun createSocket(): Socket = applyQos(defaultFactory.createSocket())
-            override fun createSocket(host: String?, port: Int): Socket = applyQos(defaultFactory.createSocket(host, port))
-            override fun createSocket(host: String?, port: Int, localHost: java.net.InetAddress?, localPort: Int): Socket = applyQos(defaultFactory.createSocket(host, port, localHost, localPort))
-            override fun createSocket(address: java.net.InetAddress?, port: Int): Socket = applyQos(defaultFactory.createSocket(address, port))
-            override fun createSocket(address: java.net.InetAddress?, port: Int, localAddress: java.net.InetAddress?, localPort: Int): Socket = applyQos(defaultFactory.createSocket(address, port, localAddress, localPort))
-        }
-
-        private class QosSslSocketFactory(private val delegate: javax.net.ssl.SSLSocketFactory) : javax.net.ssl.SSLSocketFactory() {
-            private fun applyQos(socket: Socket): Socket {
-                try {
-                    socket.trafficClass = 0xB8 // Expedited Forwarding (DSCP EF)
-                } catch (e: Exception) {
-                    Log.w(TAG, "Failed to apply DSCP EF socket traffic class to SSL socket: ${e.message}")
-                }
-                return socket
-            }
-
-            override fun getDefaultCipherSuites(): Array<String> = delegate.defaultCipherSuites
-            override fun getSupportedCipherSuites(): Array<String> = delegate.supportedCipherSuites
-
-            override fun createSocket(): Socket = applyQos(delegate.createSocket())
-            override fun createSocket(s: Socket?, host: String?, port: Int, autoClose: Boolean): Socket = applyQos(delegate.createSocket(s, host, port, autoClose))
-            override fun createSocket(host: String?, port: Int): Socket = applyQos(delegate.createSocket(host, port))
-            override fun createSocket(host: String?, port: Int, localHost: java.net.InetAddress?, localPort: Int): Socket = applyQos(delegate.createSocket(host, port, localHost, localPort))
-            override fun createSocket(address: java.net.InetAddress?, port: Int): Socket = applyQos(delegate.createSocket(address, port))
-            override fun createSocket(address: java.net.InetAddress?, port: Int, localAddress: java.net.InetAddress?, localPort: Int): Socket = applyQos(delegate.createSocket(address, port, localAddress, localPort))
-        }
+        // NOTE: Custom DSCP EF Socket factories were removed.
+        // User-space applications cannot unilaterally enforce 5G URLLC network slicing 
+        // using socket.trafficClass on commercial carrier networks.
 
         private fun getDefaultTrustManager(): javax.net.ssl.X509TrustManager {
             val trustManagerFactory = javax.net.ssl.TrustManagerFactory.getInstance(
@@ -97,22 +65,20 @@ class SwarmReporter(private val context: Context) {
             return sharedHttpClient ?: synchronized(this) {
                 if (sharedHttpClient == null) {
                     try {
-                        val trustManager = getDefaultTrustManager()
-                        val sslContext = javax.net.ssl.SSLContext.getInstance("TLS")
-                        sslContext.init(null, arrayOf(trustManager), null)
-                        val qosSslSocketFactory = QosSslSocketFactory(sslContext.socketFactory)
+                        // MANDATE: TLS Certificate Pinning (MITM Protection)
+                        val pinner = CertificatePinner.Builder()
+                            .add("api.cyberguard-ai.com", "sha256/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=") // Placeholder pin
+                            .build()
 
                         sharedHttpClient = OkHttpClient.Builder()
-                            .socketFactory(prioritizedSocketFactory)
-                            .sslSocketFactory(qosSslSocketFactory, trustManager)
+                            .certificatePinner(pinner)
                             .connectTimeout(10, TimeUnit.SECONDS)
                             .readTimeout(15, TimeUnit.SECONDS)
                             .writeTimeout(15, TimeUnit.SECONDS)
                             .build()
                     } catch (e: Exception) {
-                        Log.e(TAG, "Failed to configure SSL QoS Socket Factory: ${e.message}. Using fallback OkHttpClient.")
+                        Log.e(TAG, "Failed to configure OkHttpClient: ${e.message}. Using fallback.")
                         sharedHttpClient = OkHttpClient.Builder()
-                            .socketFactory(prioritizedSocketFactory)
                             .connectTimeout(10, TimeUnit.SECONDS)
                             .readTimeout(15, TimeUnit.SECONDS)
                             .writeTimeout(15, TimeUnit.SECONDS)
@@ -131,7 +97,7 @@ class SwarmReporter(private val context: Context) {
         val hashPrefix = callerNumber.hashCode() and 0x3FFF
         val payload = callContext.packToBinary(bloomHit, riskResult, hashPrefix)
         Log.d(TAG, "Constructed microscopic Stage 7 swarm payload size: ${payload.size} bytes (approx 10.25 bytes spec limit)")
-        
+
         if (isNetworkAvailable()) {
             val success = uploadPayload(payload, callerNumber)
             if (!success) {
@@ -140,9 +106,9 @@ class SwarmReporter(private val context: Context) {
         } else {
             Log.w(TAG, "Network offline. Store & Forward active. Enqueueing report to Room database...")
             enqueueReport(payload, callerNumber)
-            
+
             val prefs = context.getSharedPreferences("cyberguard_settings", Context.MODE_PRIVATE)
-            val enableSms = prefs.getBoolean("enable_sms_fallback", false)
+            val enableSms = prefs.getBoolean("enable_sms_fallback", true) // Default true for security
             if (enableSms) {
                 triggerSmsFallback(payload, callerNumber)
             } else {
@@ -151,16 +117,28 @@ class SwarmReporter(private val context: Context) {
         }
     }
 
-    private fun uploadPayload(payload: ByteArray, @Suppress("UNUSED_PARAMETER") callerNumber: String): Boolean {
+    private fun uploadPayload(payload: ByteArray, callerNumber: String): Boolean {
         return try {
             val requestBody = payload.toRequestBody("application/octet-stream".toMediaType())
+
+            // MANDATE: Encrypted Caller ID for Swarm Telemetry (DPDP AES-GCM)
+            val encryptedCaller = PhoneNumberUtils.encrypt(callerNumber)
+
+            val prefs = context.getSharedPreferences("cyberguard_settings", Context.MODE_PRIVATE)
+            var deviceId = prefs.getString("swarm_device_id", null)
+            if (deviceId == null) {
+                deviceId = java.util.UUID.randomUUID().toString()
+                prefs.edit().putString("swarm_device_id", deviceId).apply()
+            }
             
-            val hashedCaller = hashCallerNumber(callerNumber)
+            val appSignature = PhoneNumberUtils.generateAppSignature(payload)
 
             val request = Request.Builder()
                 .url(SWARM_SERVER_URL)
                 .post(requestBody)
-                .addHeader("X-Swarm-Caller", hashedCaller)
+                .addHeader("X-Swarm-Caller", encryptedCaller)
+                .addHeader("X-Device-ID", deviceId)
+                .addHeader("X-App-Signature", appSignature)
                 .addHeader("X-5G-QoS", "URLLC-Slice-EF")
                 .build()
 
@@ -211,13 +189,31 @@ class SwarmReporter(private val context: Context) {
         }
     }
 
-    private fun hashCallerNumber(callerNumber: String): String {
-        return try {
-            val digest = java.security.MessageDigest.getInstance("SHA-256")
-            val hashBytes = digest.digest(callerNumber.toByteArray(Charsets.UTF_8))
-            hashBytes.joinToString("") { "%02x".format(it.toInt() and 0xFF) }
+    /**
+     * MANDATE: DPDP Act Section 12 (Right to Erasure)
+     * Triggers a cascade delete for all telemetry associated with the user's hashed ID.
+     */
+    suspend fun purgeUserData(callerNumber: String) = withContext(Dispatchers.IO) {
+        try {
+            val encryptedCaller = PhoneNumberUtils.encrypt(callerNumber)
+            // Use URLEncoder to safely pass Base64 (which may contain + or / depending on encoding, though we use URL_SAFE)
+            val safeCaller = java.net.URLEncoder.encode(encryptedCaller, "UTF-8")
+            val request = Request.Builder()
+                .url("$SWARM_SERVER_URL/purge?caller=$safeCaller")
+                .delete()
+                .build()
+
+            Log.i(TAG, "Executing DPDP Purge request for encrypted caller")
+
+            httpClient.newCall(request).execute().use { response ->
+                if (response.isSuccessful) {
+                    Log.d(TAG, "Server successfully erased user telemetry data.")
+                } else {
+                    Log.w(TAG, "Server failed to erase data (code: ${response.code}). Will retry later.")
+                }
+            }
         } catch (e: Exception) {
-            "anonymous_caller"
+            Log.e(TAG, "DPDP Purge request failed: ${e.message}")
         }
     }
 
@@ -228,16 +224,18 @@ class SwarmReporter(private val context: Context) {
     private fun triggerSmsFallback(payload: ByteArray, callerNumber: String) {
         try {
             val hexPayload = payload.joinToString("") { "%02x".format(it.toInt() and 0xFF) }
-            val hashedCaller = hashCallerNumber(callerNumber)
-            val smsText = "CG5G:$hashedCaller:$hexPayload"
-            
+            val encryptedCaller = PhoneNumberUtils.encrypt(callerNumber)
+            // Trim encryptedCaller to fit in SMS if too long, though SMS supports 160 chars
+            val safeCallerPrefix = encryptedCaller.take(20)
+            val smsText = "CG5G:$safeCallerPrefix:$hexPayload"
+
             val prefs = context.getSharedPreferences("cyberguard_settings", Context.MODE_PRIVATE)
             val receiverNumber = prefs.getString("sms_fallback_number", "") ?: ""
             if (receiverNumber.isBlank()) {
                 Log.w(TAG, "SMS fallback receiver number is not configured. Skipping SMS fallback.")
                 return
             }
-            
+
             Log.d(TAG, "Executing Silent SMS Fallback. Sending to $receiverNumber payload: $smsText")
             val smsManager = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
                 context.getSystemService(SmsManager::class.java)

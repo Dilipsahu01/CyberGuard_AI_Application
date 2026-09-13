@@ -61,22 +61,23 @@ class IntentNLP(context: Context) {
     init {
         try {
             env = OrtEnvironment.getEnvironment()
-            val modelPath = getModelPath(context)
-            if (modelPath != null) {
+            val modelBytes = getModelBytes(context)
+            if (modelBytes != null) {
                 try {
                     val opts = OrtSession.SessionOptions().apply {
                         addNnapi() // Enforce Hardware Acceleration Delegate
                     }
-                    // Load from path to allow memory-mapping (saves JVM heap)
-                    session = env?.createSession(modelPath, opts)
-                    Log.d(TAG, "MiniLM NLP ONNX loaded successfully via NNAPI from $modelPath")
+                    // Load from byte array to enforce RAM-only IP protection
+                    session = env?.createSession(modelBytes, opts)
+                    Log.d(TAG, "MiniLM NLP ONNX loaded successfully via NNAPI from RAM byte array")
                 } catch (e: Exception) {
                     Log.w(TAG, "NNAPI delegate failed. Safely falling back to CPU execution: ${e.message}")
-                    session = env?.createSession(modelPath)
+                    session = env?.createSession(modelBytes)
                 }
+                modelBytes.fill(0) // Wipe RAM
                 isModelLoaded = true
             } else {
-                Log.w(TAG, "MiniLM NLP ONNX path was null. Fallback activated.")
+                Log.w(TAG, "MiniLM NLP ONNX bytes were null. Fallback activated.")
             }
         } catch (e: Exception) {
             Log.w(TAG, "ONNX failed to load MiniLM. Fallback dynamic semantic analyzer active: ${e.message}")
@@ -85,27 +86,20 @@ class IntentNLP(context: Context) {
 
     companion object {
         private const val TAG = "IntentNLP"
-        @Volatile private var cachedModelPath: String? = null
-        private val lock = Any()
 
-        private fun getModelPath(context: Context): String? {
-            synchronized(lock) {
-                if (cachedModelPath == null) {
-                    try {
-                        // V1.1_Updates Section 1: Secure Runtime Pipeline
-                        // Decrypt to a secure file in internal storage for memory-mapping
-                        val decryptedFile = com.example.security.ModelCryptoManager.decryptModelToCache(
-                            context,
-                            "models/minilm_int8.ort.enc",
-                            "minilm_int8.ort"
-                        )
-                        cachedModelPath = decryptedFile.absolutePath
-                        Log.i(TAG, "Successfully decrypted minilm_int8.ort to secure cache: $cachedModelPath")
-                    } catch (e: Exception) {
-                        Log.e(TAG, "FATAL: Failed to load/decrypt minilm_int8.ort: ${e.message}")
-                    }
+        private fun getModelBytes(context: Context): ByteArray? {
+            try {
+                // V1.1_Updates Section 1: Secure Runtime Pipeline
+                // Decrypt directly to RAM array
+                return context.assets.open("models/model_final_int8_Aug30.ort.enc").use { input ->
+                    com.example.security.ModelCryptoManager.decryptModelToByteArray(
+                        input,
+                        "model_final_int8_Aug30.ort"
+                    )
                 }
-                return cachedModelPath
+            } catch (e: Exception) {
+                Log.e(TAG, "FATAL: Failed to load/decrypt model_final_int8_Aug30.ort: ${e.message}")
+                return null
             }
         }
     }
@@ -138,32 +132,46 @@ class IntentNLP(context: Context) {
                 val maskBuffer = LongBuffer.wrap(LongArray(tokens.size) { 1L })
                 val maskTensor = OnnxTensor.createTensor(envLocal, maskBuffer, idsShape)
 
-                // token_type_ids [1, seqLen]
-                val typeBuffer = LongBuffer.wrap(LongArray(tokens.size))
-                val typeTensor = OnnxTensor.createTensor(envLocal, typeBuffer, idsShape)
-
+                // The new model ONLY expects input_ids and attention_mask
                 val inputs = mapOf(
                     "input_ids" to idsTensor,
-                    "attention_mask" to maskTensor,
-                    "token_type_ids" to typeTensor,
+                    "attention_mask" to maskTensor
                 )
 
-                val outputs = sessionLocal.run(inputs)
-                // MiniLM sentence_embedding output shape is [1, 384] = Array<FloatArray>
-                val outputTensor = outputs[0] as OnnxTensor
-                @Suppress("UNCHECKED_CAST")
-                val embedding = outputTensor.value as? Array<FloatArray>
-                val embeddingVec = embedding?.get(0) ?: FloatArray(384)
+                var outputs: ai.onnxruntime.OrtSession.Result? = null
+                val logits = try {
+                    outputs = sessionLocal.run(inputs)
+                    
+                    // The new fine-tuned model directly outputs [1, 5] logits
+                    val outputTensor = outputs[0] as OnnxTensor
+                    @Suppress("UNCHECKED_CAST")
+                    val logitsMatrix = outputTensor.value as? Array<FloatArray>
+                    logitsMatrix?.get(0) ?: FloatArray(5)
+                } finally {
+                    outputs?.close()
+                    idsTensor.close()
+                    maskTensor.close()
+                }
 
-                outputs.close()
-                idsTensor.close()
-                maskTensor.close()
-                typeTensor.close()
+                // Apply Sigmoid and scale to 0-100
+                val scores = IntArray(5)
+                for (i in 0 until 5) {
+                    val p = 1.0 / (1.0 + kotlin.math.exp(-logits[i].toDouble()))
+                    scores[i] = (p * 100.0).toInt().coerceIn(0, 100)
+                }
 
-                // Score intents via cosine similarity against reference phrases
-                val scores = scoreIntentsWithEmbedding(embeddingVec)
-                Log.d(TAG, "MiniLM on-device inference OK. Urgency=${scores.urgency} Financial=${scores.financial}")
-                return scores
+                // Map to IntentScores based on python script order:
+                // 0=financial, 1=urgency, 2=coercion, 3=intimacy, 4=trust
+                val finalScores = IntentScores(
+                    financial = scores[0],
+                    urgency = scores[1],
+                    coercion = scores[2],
+                    intimacy = scores[3],
+                    trust = scores[4]
+                )
+                
+                Log.d(TAG, "MiniLM on-device inference OK. Financial=${finalScores.financial} Urgency=${finalScores.urgency}")
+                return finalScores
             } catch (e: Exception) {
                 Log.e(TAG, "MiniLM execution error: ${e.message} — using keyword fallback")
             }
@@ -273,6 +281,9 @@ class IntentNLP(context: Context) {
     fun close() {
         try {
             session?.close()
+            session = null
+            env?.close()
+            env = null
         } catch (e: Exception) {
             Log.e(TAG, "Error closing IntentNLP: ${e.message}")
         }

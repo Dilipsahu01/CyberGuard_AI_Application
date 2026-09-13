@@ -2,15 +2,15 @@
 
 This document outlines the exact composition of the handwritten source code, configuration files, AI models, and documentation assets within the CyberGuard AI repository. 
 
-*Note: This inventory explicitly excludes automatically generated build files, Gradle caches, and Git version control history (which total over 3,000 files). The following represents the actual engineering footprint.*
+*Note: This inventory explicitly excludes automatically generated build files, Gradle caches, and Git version control history. The following represents the actual engineering footprint.*
 
 ## 1. Core Source Code
 The operational logic of the Android client, native C++ security hooks, and the Go telemetry backend.
 
-*   **`82` Kotlin Files (`.kt`)**
+*   **`91` Kotlin Files (`.kt`)**
     *   The core Android application logic, AI pipeline managers (`ScamDetectionService`), Jetpack Compose UI architecture, and Room database entities.
 *   **`3` C / C++ Files (`.cpp`, `.c`)**
-    *   The Android NDK native JNI bindings (`libcyberguard_secrets.so`) used for memory-safe encryption and string obfuscation.
+    *   The Android NDK native JNI bindings (`libcyberguard_secrets.so`) used for memory-safe encryption, dynamic key derivation, and string obfuscation.
 *   **`3` Go Files (`.go`)**
     *   The Swarm Telemetry backend server code capable of ultra-fast concurrent UDP/HTTPS threat intelligence aggregation.
 *   **`2` Python Scripts (`.py`)**
@@ -19,14 +19,14 @@ The operational logic of the Android client, native C++ security hooks, and the 
 ## 2. Documentation & Configurations
 The instructional guides, structural definitions, and Android manifest configurations.
 
-*   **`11` Markdown Files (`.md`)**
-    *   Deep-dive architectural specifications, security protocols, V1.1 roadmaps, and this codebase inventory (located mostly in `/docs`).
+*   **`12` Markdown Files (`.md`)**
+    *   Deep-dive architectural specifications, security protocols, hardened roadmaps, and this codebase inventory.
 *   **`33` XML Files (`.xml`)**
-    *   The `AndroidManifest.xml`, Jetpack Navigation graphs, color/string resources, and Vector Drawables (`.xml` icons).
+    *   The `AndroidManifest.xml`, network security configs (enforcing HTTPS), Jetpack Navigation graphs, and Vector Drawables.
 *   **`4` Kotlin Script Files (`.kts`)**
-    *   The Gradle build configurations (`build.gradle.kts`, `settings.gradle.kts`) controlling dependencies, ProGuard/R8 shrinking, and ABI stripping.
+    *   The Gradle build configurations controlling dependencies (SQLCipher, ONNX), ProGuard/R8 shrinking, and ABI stripping.
 *   **`4` Properties Files (`.properties`)**
-    *   Local environment properties (e.g., Keystore passwords, SDK paths, and Kotlin compiler flags).
+    *   Local environment properties (e.g., SDK paths and Kotlin compiler flags).
 *   **`13` JSON Files (`.json`)**
     *   Service configurations, mock responses, and static metadata.
 
@@ -51,4 +51,4 @@ Visual assets and presentation materials for the Hackathon showcase.
     *   The official pitch presentation for the 5G Innovation Hackathon.
 
 ---
-**Total Hand-Managed Engineering Files:** ~170 files.
+**Total Hand-Managed Engineering Files:** ~180 files.

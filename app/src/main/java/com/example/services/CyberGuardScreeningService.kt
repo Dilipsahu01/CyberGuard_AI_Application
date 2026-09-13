@@ -33,10 +33,11 @@ class CyberGuardScreeningService : CallScreeningService() {
         if (isScamSuspect) {
             Log.w(tag, "Screening hit! Rejecting known scammer number: $rawNumber")
             
-            // Rejects call layout at root level
+            // Allow call to ring but we know it's a scammer
+            // The InCallService will handle this state
             val response = CallResponse.Builder()
-                .setDisallowCall(true)
-                .setRejectCall(true)
+                .setDisallowCall(false)
+                .setRejectCall(false)
                 .setSkipCallLog(false)
                 .setSkipNotification(false)
                 .build()

@@ -167,10 +167,15 @@ class PipelineManager(context: Context) {
         arcTracker.reset()
     }
 
+    private val isClosed = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    @Synchronized
     fun close() {
-        vad.close()
-        nlp.close()
-        asr.close()
+        if (isClosed.compareAndSet(false, true)) {
+            vad.close()
+            nlp.close()
+            asr.close()
+        }
     }
 
     private fun getLastNWords(text: String, n: Int = 100): String {

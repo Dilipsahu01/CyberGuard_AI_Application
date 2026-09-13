@@ -38,6 +38,7 @@ robolectric = "4.13"
 roborazzi = "1.32.2"
 firebaseBom = "33.5.1"
 secretsGradlePlugin = "2.0.1"
+sqlcipher = "4.5.4"
 onnxruntime = "1.20.0"
 googleFonts = "1.7.5"
 mockk = "1.13.9"
@@ -98,6 +99,7 @@ firebase-ai = { group = "com.google.firebase", name = "firebase-ai" }
 onnxruntime-android = { group = "com.microsoft.onnxruntime", name = "onnxruntime-android", version.ref = "onnxruntime" }
 mockk-android = { group = "io.mockk", name = "mockk-android", version.ref = "mockk" }
 mockk = { group = "io.mockk", name = "mockk", version.ref = "mockk" }
+sqlcipher-android = { group = "net.zetetic", name = "android-database-sqlcipher", version.ref = "sqlcipher" }
 androidx-uiautomator = { group = "androidx.test.uiautomator", name = "uiautomator", version.ref = "uiautomator" }
 
 [plugins]

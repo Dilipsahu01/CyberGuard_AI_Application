@@ -8,7 +8,7 @@ set_target_properties(onnxruntime PROPERTIES
 )
 
 # 1. Define the library target first!
-add_library(${CMAKE_PROJECT_NAME} SHARED native-lib.cpp)
+add_library(${CMAKE_PROJECT_NAME} SHARED native-lib.cpp secrets.cpp)
 
 # 2. Include headers for ONNX Runtime and OpenSSL
 target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE

@@ -16,7 +16,7 @@
 extern "C" JNIEXPORT jlong JNICALL
 Java_com_example_security_NativeModelLoader_loadModelNative(
         JNIEnv* env,
-        jobject /* this */,
+        jclass /* clazz */,
         jstring file_path,
         jbyteArray master_key) {
 

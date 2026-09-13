@@ -38,6 +38,10 @@ import android.telecom.TelecomManager
 import androidx.compose.ui.platform.LocalContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 
 // ---- Mock Data & T9 Mapping Logic ----
 private data class T9Contact(val name: String, val number: String)
@@ -100,9 +104,10 @@ private val keypadRows = listOf(
 fun DialerScreen(
     onCallClick: (String) -> Unit = {}
 ) {
-    var dialedNumber by remember { mutableStateOf("") }
+    var dialedNumber by remember { mutableStateOf(TextFieldValue("")) }
     val context = LocalContext.current
     var contactsList by remember { mutableStateOf(mockT9Contacts) }
+    val haptic = LocalHapticFeedback.current
 
     LaunchedEffect(Unit) {
         val local = getLocalContacts(context)
@@ -128,7 +133,7 @@ fun DialerScreen(
         }
     }
 
-    Surface(color = Color.White, modifier = Modifier.fillMaxSize().systemBarsPadding()) {
+    Surface(color = Color.White, modifier = Modifier.fillMaxSize()) {
         Column(modifier = Modifier.fillMaxSize()) {
 
             // ---- MANDATE 1: Top Section (Header, Input, Contacts, Location) ----
@@ -177,11 +182,11 @@ fun DialerScreen(
                         .padding(horizontal = 16.dp),
                     contentAlignment = Alignment.CenterStart
                 ) {
-                    if (dialedNumber.isNotEmpty()) {
-                        val matchedContacts = remember(dialedNumber, contactsList) {
+                    if (dialedNumber.text.isNotEmpty()) {
+                        val matchedContacts = remember(dialedNumber.text, contactsList) {
                             contactsList.filter { contact ->
-                                getT9String(contact.name).contains(dialedNumber) ||
-                                contact.number.contains(dialedNumber)
+                                getT9String(contact.name).contains(dialedNumber.text) ||
+                                contact.number.contains(dialedNumber.text)
                             }
                         }
 
@@ -194,7 +199,7 @@ fun DialerScreen(
                                 items(matchedContacts) { contact ->
                                     SuggestedContactChip(
                                         contact = contact,
-                                        onClick = { dialedNumber = contact.number }
+                                        onClick = { dialedNumber = TextFieldValue(contact.number, TextRange(contact.number.length)) }
                                     )
                                 }
                             }
@@ -212,15 +217,21 @@ fun DialerScreen(
                     horizontalArrangement = Arrangement.Center,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    val formattedNumber = PhoneNumberUtils.formatNumber(dialedNumber, Locale.getDefault().country) ?: dialedNumber
-                    Text(
-                        text = if (dialedNumber.isNotEmpty()) formattedNumber else " ",
-                        color = Gray800,
-                        fontSize = 26.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        textAlign = TextAlign.Center,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
+                    androidx.compose.foundation.text.BasicTextField(
+                        value = dialedNumber,
+                        onValueChange = { dialedNumber = it },
+                        readOnly = true, // Prevents system keyboard from opening
+                        textStyle = androidx.compose.ui.text.TextStyle(
+                            color = Gray800,
+                            fontSize = 26.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            textAlign = TextAlign.Center
+                        ),
+                        singleLine = true,
+                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                            keyboardType = androidx.compose.ui.text.input.KeyboardType.Phone
+                        ),
+                        cursorBrush = androidx.compose.ui.graphics.SolidColor(Primary),
                         modifier = Modifier.weight(1f, fill = false)
                     )
                     Spacer(Modifier.width(4.dp))
@@ -270,9 +281,22 @@ fun DialerScreen(
                                 digit = digit,
                                 letters = letters,
                                 modifier = Modifier.weight(1f).fillMaxHeight(),
-                                onClick = { dialedNumber += digit },
+                                onClick = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    val text = dialedNumber.text
+                                    val selection = dialedNumber.selection
+                                    val newText = text.substring(0, selection.start) + digit + text.substring(selection.end)
+                                    val newCursorPos = selection.start + digit.length
+                                    dialedNumber = TextFieldValue(newText, TextRange(newCursorPos))
+                                },
                                 onLongClick = when (digit) {
-                                    "0" -> { { dialedNumber += "+" } }
+                                    "0" -> { { 
+                                        val text = dialedNumber.text
+                                        val selection = dialedNumber.selection
+                                        val newText = text.substring(0, selection.start) + "+" + text.substring(selection.end)
+                                        val newCursorPos = selection.start + 1
+                                        dialedNumber = TextFieldValue(newText, TextRange(newCursorPos))
+                                    } }
                                     else -> null
                                 }
                             )
@@ -295,14 +319,15 @@ fun DialerScreen(
                 // Massive Call Button (FloatingActionButton)
                 FloatingActionButton(
                     onClick = {
-                        if (dialedNumber.isNotEmpty()) {
+                        if (dialedNumber.text.isNotEmpty()) {
                             val defaultSimId = sharedPrefs.getString("default_sim_id", null)
+                            val finalNumber = if (dialedNumber.text.startsWith("+")) dialedNumber.text else "+91${dialedNumber.text}"
                             if (defaultSimId != null) {
-                                onCallClick("+91$dialedNumber")
+                                onCallClick(finalNumber)
                             } else if (availableSims.size > 1) {
                                 showSimSelector = true
                             } else {
-                                onCallClick("+91$dialedNumber")
+                                onCallClick(finalNumber)
                             }
                         }
                     },
@@ -323,15 +348,27 @@ fun DialerScreen(
                     modifier = Modifier
                         .size(48.dp)
                         .clip(CircleShape)
-                        .then(if (dialedNumber.isNotEmpty()) {
+                        .then(if (dialedNumber.text.isNotEmpty()) {
                             Modifier.combinedClickable(
-                                onClick = { dialedNumber = dialedNumber.dropLast(1) },
-                                onLongClick = { dialedNumber = "" }
+                                onClick = {
+                                    val text = dialedNumber.text
+                                    val selection = dialedNumber.selection
+                                    if (selection.start == selection.end) {
+                                        if (selection.start > 0) {
+                                            val newText = text.substring(0, selection.start - 1) + text.substring(selection.end)
+                                            dialedNumber = TextFieldValue(newText, TextRange(selection.start - 1))
+                                        }
+                                    } else {
+                                        val newText = text.substring(0, selection.start) + text.substring(selection.end)
+                                        dialedNumber = TextFieldValue(newText, TextRange(selection.start))
+                                    }
+                                },
+                                onLongClick = { dialedNumber = TextFieldValue("") }
                             )
                         } else Modifier),
                     contentAlignment = Alignment.Center
                 ) {
-                    if (dialedNumber.isNotEmpty()) {
+                    if (dialedNumber.text.isNotEmpty()) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.Backspace,
                             contentDescription = "Backspace",
@@ -359,7 +396,8 @@ fun DialerScreen(
                                     sharedPrefs.edit().putString("default_sim_id", sim.id).apply()
                                 }
                                 showSimSelector = false
-                                onCallClick("+91$dialedNumber")
+                                val finalNumber = if (dialedNumber.text.startsWith("+")) dialedNumber.text else "+91${dialedNumber.text}"
+                                onCallClick(finalNumber)
                             }
                             .padding(16.dp),
                         verticalAlignment = Alignment.CenterVertically

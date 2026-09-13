@@ -1,24 +1,37 @@
-# CyberGuard-AI Storage Optimization Setup
+# CyberGuard AI: Developer Setup Guide
 
-This document records the storage and APK size optimizations applied to the CyberGuard-AI project prior to deployment.
+This guide details the steps to set up the development environment for the CyberGuard AI Android application and Go server.
 
-## 1. Removed Duplicate ASR Model
-**Issue:** The project contained a massive 132 MB duplicate of the ASR neural network. It existed both at `assets/sherpa-onnx-nemo-streaming-fast-conformer-ctc-en-80ms-int8/model.int8.onnx` and `assets/models/asr_model.ort`.
-**Action Taken:** 
-* Executed `rm app/src/main/assets/models/asr_model.ort`
-* Verified that `StreamingASR.kt` dynamically points to the `sherpa-onnx-nemo...` folder, making `asr_model.ort` entirely redundant.
-**Impact:** Instantly saved **132 MB** of permanent APK and device storage space.
+## 1. Prerequisites
+- **Android Studio 2025.3.4+** (Ladybug or newer).
+- **Go 1.22+** (For the telemetry server).
+- **Python 3.10+** (For model encryption scripts).
+- **Android 14+ Device** (Physical device required for Telecom API and NNAPI testing).
 
-## 2. ABI Architecture Filtering (C++ Native Libraries)
-**Issue:** The universal debug APK was bundling ONNX Runtime and Sherpa-ONNX `.so` library binaries for four different CPU architectures (`x86`, `x86_64`, `armeabi-v7a`, `arm64-v8a`), causing a severe bloat of roughly ~120 MB.
-**Action Taken:** 
-* Modified `app/build.gradle.kts`
-* Added an `ndk { abiFilters.add("arm64-v8a") }` block inside the `defaultConfig` scope.
-**Impact:** Forces Gradle to only package the 64-bit ARM architecture (which powers 99% of modern Android devices), stripping emulator and legacy 32-bit binaries. This saves roughly **80 MB** per universal APK build.
+## 2. Android App Setup
+1. Clone the private repository.
+2. Ensure you have the `arm64-v8a` NDK toolchain installed in Android Studio.
+3. **Environment Secrets:**
+   - Create a `.env` file in the project root.
+   - Populate it with required API keys (refer to `.env.example`).
+4. **Model Preparation:**
+   - If adding new models, place them in `raw_models_backup/`.
+   - Run `python3 encrypt_models.py` to generate the `.enc` assets.
+5. **Build:**
+   - Run `./gradlew assembleDebug` to build the debug APK.
+   - Run `./gradlew testDebugUnitTest` to verify the security and AI layers.
 
-## Summary of Optimization
-Total Storage Saved: **~212 MB**
-Original Universal APK Size: **357.7 MB**
-Optimized APK Size: **~145.7 MB**
+## 3. Go Server Setup
+1. Navigate to the `server/` directory.
+2. Run `go mod tidy` to install dependencies (Gorilla Mux, SQLCipher, RS CORS).
+3. **Run:**
+   - `go build -o server_bin .`
+   - `./server_bin` (Default port: 8080).
+4. **Verify:**
+   - `curl http://localhost:8080/api/health`
 
-*Note: For the absolute smallest footprint upon final deployment to the Google Play Store, generating an Android App Bundle (.aab) instead of a direct APK is recommended.*
+## 4. Security Hardening Verification
+Before submitting code, ensure the following are functional:
+- **SQLCipher:** Verify that Room databases are not readable by standard SQLite browsers without the Keystore-bound passphrase.
+- **TLS Pinning:** Ensure the app connects only to a server with a valid pinned certificate.
+- **Model Cache:** Confirm that `noBackupFilesDir/secure_models/` is empty during idle states (post-engine load).

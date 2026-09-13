@@ -1,5 +1,13 @@
 package com.example
 
+import androidx.compose.ui.input.pointer.PointerInputChange
+import androidx.compose.ui.input.pointer.util.VelocityTracker
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 /**
  * IncomingCallActivity.kt
  * 
@@ -133,6 +141,9 @@ class IncomingCallActivity : ComponentActivity() {
             }
         }
 
+        val threshold = getSharedPreferences("cyberguard_settings", Context.MODE_PRIVATE)
+            .getInt("alert_threshold", 70)
+
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 com.example.utils.CallStateBroadcaster.callEndedFlow.collect {
@@ -148,9 +159,6 @@ class IncomingCallActivity : ComponentActivity() {
                 }
             }
         }
-
-        val threshold = getSharedPreferences("cyberguard_settings", Context.MODE_PRIVATE)
-            .getInt("alert_threshold", 70)
 
         setContent {
             MyApplicationTheme {
@@ -279,6 +287,7 @@ class IncomingCallActivity : ComponentActivity() {
                                     }
                                 }
                             )
+                            }
                         }
                     }
                 }
@@ -478,7 +487,6 @@ class IncomingCallActivity : ComponentActivity() {
             }
         }
     }
-}
 
 @Suppress("DEPRECATION")
     private fun vibrateAlert() {
@@ -517,10 +525,10 @@ fun SwipeToAnswerSlider(
             .height(80.dp)
             .clip(CircleShape)
             .background(Color.DarkGray.copy(alpha = 0.8f))
-            .androidx.compose.ui.semantics.semantics {
-                androidx.compose.ui.semantics.customActions = listOf(
-                    androidx.compose.ui.semantics.CustomAccessibilityAction("Answer Call") { onAccept(); true },
-                    androidx.compose.ui.semantics.CustomAccessibilityAction("Decline Call") { onDecline(); true }
+            .semantics {
+                customActions = listOf(
+                    CustomAccessibilityAction("Answer Call") { onAccept(); true },
+                    CustomAccessibilityAction("Decline Call") { onDecline(); true }
                 )
             },
         contentAlignment = Alignment.Center
@@ -543,8 +551,8 @@ fun SwipeToAnswerSlider(
                 .background(Color.White)
                 .pointerInput(Unit) {
                     val velocityTracker = androidx.compose.ui.input.pointer.util.VelocityTracker()
-                    androidx.compose.foundation.gestures.detectHorizontalDragGestures(
-                        onDragStart = { velocityTracker.resetTracking() },
+                    detectHorizontalDragGestures(
+                        onDragStart = { _ -> velocityTracker.resetTracking() },
                         onDragEnd = {
                             val velocity = velocityTracker.calculateVelocity().x
                             coroutineScope.launch {
@@ -588,7 +596,7 @@ fun SwipeToAnswerSlider(
             val icon = when {
                 offsetX.value > 10f -> Icons.Filled.Call
                 offsetX.value < -10f -> Icons.Filled.CallEnd
-                else -> Icons.Filled.Phone
+                else -> Icons.Filled.Call
             }
             Icon(icon, contentDescription = null, tint = iconTint, modifier = Modifier.size(32.dp))
         }

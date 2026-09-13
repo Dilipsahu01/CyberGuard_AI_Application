@@ -27,14 +27,11 @@
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE"/>
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
 
-    <uses-feature android:name="android.hardware.telephony" android:required="false" />
+    <uses-feature android:name="android.hardware.telephony" android:required="true" />
 
     <!-- Restrict app to devices with a "Normal" or "Large" RAM footprint (usually > 2GB) -->
     <!-- Devices identified as "low RAM" by the OS will not be able to install the app -->
     <uses-feature android:name="android.hardware.ram.normal" android:required="true" />
-
-    <!-- Require a 64-bit capable CPU (Required for your ARM64 NDK libraries) -->
-    <uses-feature android:name="android.hardware.telephony" android:required="true" />
 
     <application
         android:name=".CyberGuardApplication"

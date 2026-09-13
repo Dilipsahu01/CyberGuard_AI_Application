@@ -1,5 +1,7 @@
 package com.example.ui
 
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -425,6 +427,7 @@ fun ActiveCallLayout(
 
 @Composable
 private fun CallControlButton(icon: ImageVector, label: String, isActive: Boolean = false, onClick: () -> Unit = {}) {
+    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
     val bgColor = if (isActive) Color(0xFFD1E4FF) else Gray50
     val tintColor = if (isActive) Color(0xFF004B71) else Gray700
     Column(horizontalAlignment = Alignment.CenterHorizontally) {

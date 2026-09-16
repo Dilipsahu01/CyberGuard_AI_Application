@@ -20,15 +20,32 @@ import com.example.models.IntentScores
 import com.example.models.RiskResult
 import com.example.models.ContactMemory
 
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.async
+import kotlinx.coroutines.Dispatchers
+
 class PipelineManager(context: Context) {
     private val TAG = "PipelineManager"
     private val powerManager = context.getSystemService(Context.POWER_SERVICE) as PowerManager
 
     private val bloomFilter = BloomFilter()
-    val vad = SileroVAD(context)
-    val asr = StreamingASR(context)
+    val vad: SileroVAD
+    val asr: StreamingASR
+    val nlp: IntentNLP
+    
+    init {
+        val (v, a, n) = runBlocking(Dispatchers.IO) {
+            val vDef = async { SileroVAD(context) }
+            val aDef = async { StreamingASR(context) }
+            val nDef = async { IntentNLP(context) }
+            Triple(vDef.await(), aDef.await(), nDef.await())
+        }
+        vad = v
+        asr = a
+        nlp = n
+    }
+
     private val regexGate = RegexGate()
-    val nlp = IntentNLP(context)
     private val ensemble = EnsembleEngine()
     private val arcTracker = ArcTracker()
     var contactMemory: ContactMemory? = null

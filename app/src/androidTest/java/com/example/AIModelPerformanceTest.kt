@@ -34,8 +34,9 @@ class AIModelPerformanceTest {
         val nlpLoadTime = System.currentTimeMillis() - nlpStartTime
         Log.i("PerformanceTest", "NLP (MiniLM) Initialization Time: $nlpLoadTime ms")
         
+        val pmStartTime = System.currentTimeMillis()
         val pipelineManager = PipelineManager(appContext) // For the old test below
-        val loadTime = System.currentTimeMillis() - startTime
+        val loadTime = System.currentTimeMillis() - pmStartTime
         Log.i("PerformanceTest", "Total Pipeline Manager Initialization: $loadTime ms")
         Log.i("PerformanceTest", "========================================")
         

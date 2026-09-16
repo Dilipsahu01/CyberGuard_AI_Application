@@ -21,7 +21,7 @@ class SecurityTests {
 
     @Test
     fun testNativeSecrets_AESKeyFormat() {
-        val masterKey = NativeSecrets.getModelMasterKey()
+        val masterKey = NativeSecrets.getModelMasterKey(ByteArray(16))
         // The AES-256 key must be exactly 32 bytes
         assertEquals("Master key must be exactly 32 bytes (256-bit)", 32, masterKey.size)
         

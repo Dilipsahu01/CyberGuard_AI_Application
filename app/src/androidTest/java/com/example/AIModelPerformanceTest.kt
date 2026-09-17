@@ -54,7 +54,7 @@ class AIModelPerformanceTest {
         Log.i("PerformanceTest", "Testing Voice/NLP Inference with string: '$testString'")
         
         val inferenceStartTime = System.currentTimeMillis()
-        val scores = pipelineManager.nlp.analyze(testString)
+        val scores = nlp.analyze(testString)
         val inferenceTime = System.currentTimeMillis() - inferenceStartTime
         
         Log.i("PerformanceTest", "NLP Inference Time: $inferenceTime ms")

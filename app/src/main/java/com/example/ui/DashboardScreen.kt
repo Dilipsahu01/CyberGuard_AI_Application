@@ -40,7 +40,8 @@ fun DashboardScreen(
     onNavigateToContacts: () -> Unit = {},
     onNavigateToScamHistory: () -> Unit = {},
     onNavigateToFavorites: () -> Unit = {},
-    onNavigateToVoicemail: () -> Unit = {}
+    onNavigateToVoicemail: () -> Unit = {},
+    onNavigateToLiveDemo: () -> Unit = {}
 ) {
     val scamLogs by viewModel?.scamLogs?.collectAsState(initial = emptyList()) ?: remember { mutableStateOf(emptyList()) }
 
@@ -68,6 +69,18 @@ fun DashboardScreen(
 
                 // ---- Swarm Status Indicator (Animated) ----
                 SwarmActiveBadge()
+
+                Spacer(Modifier.height(24.dp))
+
+                // ---- Live Threat Simulation Button ----
+                Button(
+                    onClick = onNavigateToLiveDemo,
+                    modifier = Modifier.fillMaxWidth().height(56.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF8B5CF6)), // Vivid Purple
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    Text("🛡️ Launch Threat Simulation", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                }
 
                 Spacer(Modifier.height(24.dp))
 

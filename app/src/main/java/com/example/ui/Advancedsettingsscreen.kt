@@ -3,6 +3,11 @@ package com.example.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import android.content.pm.PackageManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Edit
@@ -43,6 +48,16 @@ fun AdvancedSettingsScreen(
     var darkTheme by rememberSaveable { mutableStateOf(prefs.getBoolean("dark_theme", false)) }
     var dialpadTones by rememberSaveable { mutableStateOf(prefs.getBoolean("dialpad_tones", true)) }
     var vibrateOnCall by rememberSaveable { mutableStateOf(prefs.getBoolean("vibrate_on_call", true)) }
+
+    val smsPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            android.widget.Toast.makeText(context, "Guardian number saved with SMS protection active!", android.widget.Toast.LENGTH_SHORT).show()
+        } else {
+            android.widget.Toast.makeText(context, "SMS Permission is required for Guardian alerts to work!", android.widget.Toast.LENGTH_LONG).show()
+        }
+    }
 
     LaunchedEffect(guardianNumber) {
         prefs.edit().putString("guardian_number", guardianNumber).apply()
@@ -112,7 +127,11 @@ fun AdvancedSettingsScreen(
                             onValueChange = { guardianNumber = it },
                             placeholder = "e.g. +91 9876543210",
                             onSaveClick = {
-                                android.widget.Toast.makeText(context, "Guardian number saved!", android.widget.Toast.LENGTH_SHORT).show()
+                                if (ContextCompat.checkSelfPermission(context, android.Manifest.permission.SEND_SMS) != PackageManager.PERMISSION_GRANTED) {
+                                    smsPermissionLauncher.launch(android.Manifest.permission.SEND_SMS)
+                                } else {
+                                    android.widget.Toast.makeText(context, "Guardian number saved!", android.widget.Toast.LENGTH_SHORT).show()
+                                }
                             }
                         )
                     }

@@ -20,19 +20,7 @@ fun AppNavigation(viewModel: PipelineViewModel, startDestination: String = "dash
     // Smooth Navigation Transitions: Premium feel with horizontal slides and fades
     NavHost(
         navController = navController,
-        startDestination = startDestination,
-        enterTransition = {
-            slideInHorizontally(initialOffsetX = { fullWidth -> fullWidth }, animationSpec = tween(250)) + fadeIn(animationSpec = tween(250))
-        },
-        exitTransition = {
-            slideOutHorizontally(targetOffsetX = { fullWidth -> -fullWidth }, animationSpec = tween(250)) + fadeOut(animationSpec = tween(250))
-        },
-        popEnterTransition = {
-            slideInHorizontally(initialOffsetX = { fullWidth -> -fullWidth }, animationSpec = tween(250)) + fadeIn(animationSpec = tween(250))
-        },
-        popExitTransition = {
-            slideOutHorizontally(targetOffsetX = { fullWidth -> fullWidth }, animationSpec = tween(250)) + fadeOut(animationSpec = tween(250))
-        }
+        startDestination = startDestination
     ) {
 
         composable("dashboard") {
@@ -44,7 +32,8 @@ fun AppNavigation(viewModel: PipelineViewModel, startDestination: String = "dash
                 onNavigateToContacts = { navController.navigate("contacts") },
                 onNavigateToScamHistory = { navController.navigate("scam_history") },
                 onNavigateToFavorites = { navController.navigate("favorites") },
-                onNavigateToVoicemail = { navController.navigate("voicemail") }
+                onNavigateToVoicemail = { navController.navigate("voicemail") },
+                onNavigateToLiveDemo = { navController.navigate("live_demo") }
             )
         }
 
@@ -225,6 +214,12 @@ fun AppNavigation(viewModel: PipelineViewModel, startDestination: String = "dash
                         popUpTo("dashboard")
                     }
                 }
+            )
+        }
+
+        composable("live_demo") {
+            LiveDemoScreen(
+                onBackClick = { navController.popBackStack() }
             )
         }
 

@@ -22,6 +22,8 @@ import com.example.models.ContactMemory
 
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.async
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 
 class PipelineManager(context: Context) {
@@ -31,18 +33,26 @@ class PipelineManager(context: Context) {
     private val bloomFilter = BloomFilter()
     val vad: SileroVAD
     val asr: StreamingASR
-    val nlp: IntentNLP
+    @Volatile var nlp: IntentNLP? = null
     
     init {
-        val (v, a, n) = runBlocking(Dispatchers.IO) {
+        val (v, a) = runBlocking(Dispatchers.IO) {
             val vDef = async { SileroVAD(context) }
             val aDef = async { StreamingASR(context) }
-            val nDef = async { IntentNLP(context) }
-            Triple(vDef.await(), aDef.await(), nDef.await())
+            
+            // Background load NLP (Staged Boot)
+            CoroutineScope(Dispatchers.IO).launch {
+                try {
+                    nlp = IntentNLP(context)
+                    Log.i(TAG, "Background NLP load complete!")
+                } catch (e: Exception) {
+                    Log.e(TAG, "Background NLP load failed: ${e.message}")
+                }
+            }
+            Pair(vDef.await(), aDef.await())
         }
         vad = v
         asr = a
-        nlp = n
     }
 
     private val regexGate = RegexGate()
@@ -137,8 +147,14 @@ class PipelineManager(context: Context) {
 
         if (shouldWakeLlm && !thermalThrottling && !skipNLP && newText.isNotEmpty() && transcript.isNotEmpty()) {
             val slidingWindowText = getLastNWords(transcript.toString(), 100)
-            lastIntents = nlp.analyze(slidingWindowText)
-            lastLlmRunTurn = turnCount
+            
+            val localNlp = nlp
+            if (localNlp != null) {
+                lastIntents = localNlp.analyze(slidingWindowText)
+                lastLlmRunTurn = turnCount
+            } else {
+                Log.i(TAG, "NLP model still loading in background. Text safely buffered.")
+            }
         }
 
         // Stage 5: Ensemble blending
@@ -190,7 +206,7 @@ class PipelineManager(context: Context) {
     fun close() {
         if (isClosed.compareAndSet(false, true)) {
             vad.close()
-            nlp.close()
+            nlp?.close()
             asr.close()
         }
     }

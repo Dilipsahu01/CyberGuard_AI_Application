@@ -104,7 +104,7 @@ func main() {
 	r := mux.NewRouter()
 	r.HandleFunc("/api/ping", pingHandler).Methods("GET")
 	r.HandleFunc("/api/health", healthHandler).Methods("GET")
-	r.HandleFunc("/api/telemetry", telemetryHandler).Methods("POST")
+	r.HandleFunc("/api/telemetry", telemetryHandler).Methods("POST", "GET")
 	r.HandleFunc("/api/whitelist", whitelistHandler).Methods("GET", "POST", "DELETE")
 	r.HandleFunc("/api/lora", loraHandler).Methods("POST")
 
@@ -219,6 +219,17 @@ func parseBinaryTelemetry(data []byte) (Telemetry, error) {
 }
 
 func telemetryHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method == "GET" {
+		records, err := getRecentTelemetry()
+		if err != nil {
+			http.Error(w, "internal error fetching records", http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(records)
+		return
+	}
+
 	encryptedCaller := r.Header.Get("X-Swarm-Caller")
 	var caller string
 	if encryptedCaller != "" {

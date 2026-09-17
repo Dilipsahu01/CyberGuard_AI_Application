@@ -45,6 +45,26 @@ func saveTelemetry(t Telemetry) error {
 	return err
 }
 
+func getRecentTelemetry() ([]Telemetry, error) {
+	rows, err := db.Query(`SELECT caller, score, transcript, intent_scores, timestamp FROM telemetry ORDER BY timestamp DESC LIMIT 50`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var results []Telemetry
+	for rows.Next() {
+		var t Telemetry
+		var intentStr string
+		if err := rows.Scan(&t.Caller, &t.Score, &t.Transcript, &intentStr, &t.Timestamp); err != nil {
+			continue
+		}
+		json.Unmarshal([]byte(intentStr), &t.IntentScores)
+		results = append(results, t)
+	}
+	return results, nil
+}
+
 func closeDB() {
 	if db != nil {
 		_ = db.Close()

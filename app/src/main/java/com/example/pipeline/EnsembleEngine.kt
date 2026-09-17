@@ -13,9 +13,10 @@ package com.example.pipeline
  * (ContactMemory), this engine drastically reduces False Positives before terminating a call.
  */
 import com.example.models.IntentScores
+import com.example.models.CallContext
 
 class EnsembleEngine {
-    fun calculate(regexScore: Int, intents: IntentScores, arcScore: Float = 0f, romanceScore: Int = 0): Int {
+    fun calculate(regexScore: Int, intents: IntentScores, arcScore: Float = 0f, romanceScore: Int = 0, callContext: CallContext? = null): Int {
         // High-importance intent indicators using inline primitive maxOf functions (zero heap allocation)
         val maxCoreIntent = maxOf(intents.financial, intents.urgency, intents.coercion)
         val maxSupportIntent = maxOf(intents.intimacy, intents.trust)
@@ -51,6 +52,15 @@ class EnsembleEngine {
         // Romance / Pig Butchering Multi-Session Bonus
         if (romanceScore > 40) {
             calculatedScore += (romanceScore * 0.5f) // high romance score directly bumps final risk
+        }
+
+        // CallContext (Telemetry & Network Flags) Bonus
+        callContext?.let { ctx ->
+            if (ctx.notInContacts) calculatedScore += 5f
+            if (ctx.isVoip) calculatedScore += 10f
+            if (ctx.rapidCallback) calculatedScore += 10f
+            if (ctx.stirShakenFailed) calculatedScore += 15f
+            if (ctx.totalCalls == 0) calculatedScore += 5f // First time calling ever
         }
 
         // Clip maximum score to 100

@@ -59,6 +59,7 @@ class PipelineManager(context: Context) {
     private val ensemble = EnsembleEngine()
     private val arcTracker = ArcTracker()
     var contactMemory: ContactMemory? = null
+    var callContext: com.example.models.CallContext? = null
 
     private var transcript = StringBuilder()
     private var turnCount = 0
@@ -118,6 +119,11 @@ class PipelineManager(context: Context) {
         val (regexScore, matchingKeywords) = regexGate.check(newText)
         if (matchingKeywords.isNotEmpty()) {
             hitWord = matchingKeywords
+            val hitLower = hitWord.lowercase()
+            contactMemory?.let { mem ->
+                if ("otp" in hitLower || "pin" in hitLower || "cvv" in hitLower || "password" in hitLower) mem.askedOtp = true
+                if ("secret" in hitLower || "private" in hitLower || "don't tell anyone" in hitLower) mem.secrecyAsked = true
+            }
         }
 
         // Stage 4: Semantic Context Analysis (ADPF THERMAL API + VAD GATING)
@@ -152,6 +158,18 @@ class PipelineManager(context: Context) {
             if (localNlp != null) {
                 lastIntents = localNlp.analyze(slidingWindowText)
                 lastLlmRunTurn = turnCount
+                
+                // Mutate Contact Memory Bits based on latest semantic context
+                contactMemory?.let { mem ->
+                    if (lastIntents.financial > 40) mem.askedMoney = true
+                    if (lastIntents.urgency > 60) mem.urgencyUsed = true
+                    
+                    val currentIntimacy = (lastIntents.intimacy / 14).coerceIn(0, 7)
+                    if (currentIntimacy > mem.intimacyLevel) mem.intimacyLevel = currentIntimacy
+                    
+                    val currentEmotion = (lastIntents.urgency / 14).coerceIn(0, 7)
+                    if (currentEmotion > mem.emotionalIntensity) mem.emotionalIntensity = currentEmotion
+                }
             } else {
                 Log.i(TAG, "NLP model still loading in background. Text safely buffered.")
             }
@@ -159,7 +177,7 @@ class PipelineManager(context: Context) {
 
         // Stage 5: Ensemble blending
         val romanceScore = contactMemory?.computeRomanceScore() ?: 0
-        val baseScore = ensemble.calculate(regexScore, lastIntents, arcTracker.arcScore, romanceScore)
+        val baseScore = ensemble.calculate(regexScore, lastIntents, arcTracker.arcScore, romanceScore, callContext)
 
         // *** BASELINE SUSPICION: same robustness as the Python web app ***
         // 5 pts per speech turn, capped at 25 pts. Ensures risk bars visibly move early on.

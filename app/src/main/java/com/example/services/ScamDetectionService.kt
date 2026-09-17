@@ -261,7 +261,19 @@ class ScamDetectionService : Service() {
                 val mgr = com.example.pipeline.PipelineSingleton.getInstance(this@ScamDetectionService)
                 mgr.reset()
 
+                // Generate telemetry CallContext (used for scoring and Swarm reporting)
+                val notInContacts = (localContact == null)
+                val rapidCallback = (contactMemory.totalCalls > 1 && contactMemory.daysKnown == 0) // Basic heuristic
+                val callContext = com.example.models.CallContext(
+                    totalCalls = contactMemory.totalCalls,
+                    daysKnown = contactMemory.daysKnown,
+                    notInContacts = notInContacts,
+                    rapidCallback = rapidCallback,
+                    isVoip = false // Placeholder for demo
+                )
+
                 mgr.contactMemory = contactMemory
+                mgr.callContext = callContext
                 pipelineManager = mgr
                 Log.i(tag, "Pipeline loaded successfully")
 
@@ -703,7 +715,7 @@ class ScamDetectionService : Service() {
 
                 // TRIGGER: Secured Binary Telemetry (10.25-byte Swarm Payload)
                 if (isScam) {
-                    val context = CallContext(
+                    val context = currentPipeline?.callContext ?: CallContext(
                         totalCalls = (currentPipeline?.contactMemory?.totalCalls ?: 0),
                         daysKnown = (currentPipeline?.contactMemory?.daysKnown ?: 0)
                     )

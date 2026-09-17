@@ -108,15 +108,20 @@ func main() {
 	r.HandleFunc("/api/whitelist", whitelistHandler).Methods("GET", "POST", "DELETE")
 	r.HandleFunc("/api/lora", loraHandler).Methods("POST")
 
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
+	}
+
 	handler := cors.AllowAll().Handler(rateLimitMiddleware(r))
 	srv := &http.Server{
-		Addr:         ":8080",
+		Addr:         ":" + port,
 		Handler:      handler,
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
 		IdleTimeout:  60 * time.Second,
 	}
-	log.Println("CyberGuard-AI server starting on :8080")
+	log.Println("CyberGuard-AI server starting on :" + port)
 	if err := srv.ListenAndServe(); err != nil {
 		log.Fatalf("server error: %v", err)
 	}

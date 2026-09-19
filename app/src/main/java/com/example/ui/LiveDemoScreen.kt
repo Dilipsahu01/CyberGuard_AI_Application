@@ -389,7 +389,7 @@ private fun startLiveInference(
     val bufferSize = minBuf.coerceAtLeast(3200)
     
     val audioRecord = AudioRecord(
-        MediaRecorder.AudioSource.UNPROCESSED,
+        MediaRecorder.AudioSource.MIC,
         sampleRate,
         channelConfig,
         audioFormat,
@@ -414,9 +414,9 @@ private fun startLiveInference(
                 floatBuffer[i] = shortBuffer[i].toFloat() / 32768.0f
             }
             
-            // Process exact chunk
+            // Process exact chunk, bypassing VAD so low mic volume isn't dropped
             val exactSlice = if (read == sliceSize) floatBuffer else floatBuffer.copyOfRange(0, read)
-            val result = pipeline.processChunk(exactSlice)
+            val result = pipeline.processChunk(exactSlice, skipNlp = false, isSimulation = true)
             
             onResult(result)
         } else {

@@ -59,6 +59,7 @@ fun LiveDemoScreen(onBackClick: () -> Unit) {
     var isTrustedContact by remember { mutableStateOf(false) }
     var isBlockedContact by remember { mutableStateOf(false) }
     var sensitivityThreshold by remember { mutableFloatStateOf(70f) }
+    var manualText by remember { mutableStateOf("") }
     
     val scamScore = maxOf(finThreat, urgThreat) * 100
     val scamStatus = when {
@@ -211,6 +212,52 @@ fun LiveDemoScreen(onBackClick: () -> Unit) {
                 )
             }
 
+            // DEBUG STATS
+            var debugAmp by remember { mutableStateOf("Amp: N/A") }
+            var debugVad by remember { mutableStateOf("VAD: N/A") }
+            var debugAsr by remember { mutableStateOf("ASR: N/A") }
+            
+            LaunchedEffect(transcript) {
+                val pm = PipelineSingleton.getInstance(context)
+                debugVad = "VAD: ${pm.vad.speechActive} (Prob: ${pm.vad.lastProb})"
+                debugAsr = "ASR Stream Ready: ${pm.asr.isStreamReady()}"
+                debugAmp = "Mic Last Amp: ${pm.lastAmplitude}"
+            }
+
+            Text(text = "$debugAmp | $debugVad | $debugAsr", fontSize = 10.sp, color = Color.Gray)
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // ASR Override / Manual Injection
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                OutlinedTextField(
+                    value = manualText,
+                    onValueChange = { manualText = it },
+                    label = { Text("ASR Override (Type to Simulate)") },
+                    modifier = Modifier.weight(1f)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Button(
+                    onClick = {
+                        if (manualText.isNotBlank()) {
+                            val pm = PipelineSingleton.getInstance(context)
+                            val result = pm.processManualText(manualText)
+                            finThreat = result.intents.financial.toFloat() / 100f
+                            urgThreat = result.intents.urgency.toFloat() / 100f
+                            transcript = result.transcript
+                            isOverlayVisible = true
+                            manualText = ""
+                        }
+                    },
+                    modifier = Modifier.height(56.dp) // Match height of OutlinedTextField
+                ) {
+                    Text("Inject")
+                }
+            }
+
             Spacer(modifier = Modifier.height(32.dp))
 
             // Record Button
@@ -258,9 +305,40 @@ fun LiveDemoScreen(onBackClick: () -> Unit) {
             
             Spacer(modifier = Modifier.height(16.dp))
             Text(
-                text = if (isRecording) "Stop Simulation" else "Start Simulation",
+                text = if (isRecording) "Stop Simulation" else "Start Live Simulation",
                 style = MaterialTheme.typography.labelLarge
             )
+
+            Spacer(modifier = Modifier.height(16.dp))
+            Button(
+                onClick = {
+                    if (isRecording) {
+                        isRecording = false
+                        recordJob?.cancel()
+                    } else {
+                        isRecording = true
+                        transcript = "Initializing Staged Boot... Please Wait..."
+                        finThreat = 0f
+                        urgThreat = 0f
+                        isOverlayVisible = true
+                        
+                        recordJob = coroutineScope.launch(Dispatchers.IO) {
+                            startSimulationInference(
+                                context = context,
+                                onResult = { result ->
+                                    finThreat = result.intents.financial.toFloat() / 100f
+                                    urgThreat = result.intents.urgency.toFloat() / 100f
+                                    transcript = result.transcript
+                                },
+                                isRecordingProvider = { isRecording }
+                            )
+                        }
+                    }
+                },
+                modifier = Modifier.fillMaxWidth().height(56.dp)
+            ) {
+                Text(if (isRecording) "Stop Audio Simulation" else "Simulate Audio File (Scam Demo)")
+            }
         }
     }
 }
@@ -311,7 +389,7 @@ private fun startLiveInference(
     val bufferSize = minBuf.coerceAtLeast(3200)
     
     val audioRecord = AudioRecord(
-        MediaRecorder.AudioSource.MIC,
+        MediaRecorder.AudioSource.UNPROCESSED,
         sampleRate,
         channelConfig,
         audioFormat,
@@ -341,9 +419,66 @@ private fun startLiveInference(
             val result = pipeline.processChunk(exactSlice)
             
             onResult(result)
+        } else {
+            android.util.Log.e("LiveDemoScreen", "AudioRecord read returned <= 0: $read")
         }
     }
 
     audioRecord.stop()
     audioRecord.release()
+}
+
+@SuppressLint("MissingPermission")
+private suspend fun startSimulationInference(
+    context: Context,
+    onResult: (RiskResult) -> Unit,
+    isRecordingProvider: () -> Boolean
+) {
+    val pipeline = PipelineSingleton.getInstance(context)
+    pipeline.reset()
+
+    try {
+        context.assets.open("scam_test.wav").use { inputStream ->
+            // Skip 44 bytes of WAV header
+            inputStream.skip(44)
+            
+            val sliceSize = 512
+            val byteBuffer = ByteArray(sliceSize * 2) // 16-bit = 2 bytes per sample
+            val floatBuffer = FloatArray(sliceSize)
+            
+            while (isRecordingProvider() && kotlinx.coroutines.currentCoroutineContext().isActive) {
+                val bytesRead = inputStream.read(byteBuffer)
+                if (bytesRead <= 0) break
+                
+                val samplesRead = bytesRead / 2
+                val shortBuf = java.nio.ByteBuffer.wrap(byteBuffer, 0, bytesRead)
+                    .order(java.nio.ByteOrder.LITTLE_ENDIAN)
+                    .asShortBuffer()
+                    
+                for (i in 0 until samplesRead) {
+                    floatBuffer[i] = shortBuf.get(i).toFloat() / 32768.0f
+                }
+                
+                val exactSlice = if (samplesRead == sliceSize) floatBuffer else floatBuffer.copyOfRange(0, samplesRead)
+                // Pass true to bypass VAD for simulation, guaranteeing ASR processes it
+                val result = pipeline.processChunk(exactSlice, skipNlp = false, isSimulation = true)
+                
+                onResult(result)
+                
+                // Sleep for exactly 32ms (512 samples at 16kHz) to simulate real-time stream
+                kotlinx.coroutines.delay(32)
+            }
+            
+            // Simulation finished, force flush the ASR to get the final words
+            val finalResult = pipeline.processChunk(FloatArray(0), skipNlp = false, isSimulation = true).copy(
+                transcript = pipeline.asr.forceEndpoint()
+            )
+            // Just append the forced endpoint text directly via manual injection
+            if (finalResult.transcript.isNotBlank()) {
+                onResult(pipeline.processManualText(finalResult.transcript))
+            }
+        }
+    } catch (e: Exception) {
+        android.util.Log.e("LiveDemoScreen", "Failed to simulate audio: ${e.message}")
+    }
 }

@@ -34,7 +34,8 @@ class SileroVAD(context: Context) {
     private var vadState: Array<Array<FloatArray>> = Array(2) { Array(1) { FloatArray(128) } }
 
     // Trailing silence and utterance state tracking
-    private var speechActive = false
+    var speechActive = false
+    var lastProb = 0f
     private var consecutiveSilenceChunks = 0
     var utteranceEnded = false
         private set
@@ -66,6 +67,7 @@ class SileroVAD(context: Context) {
                 sum += sample * sample
             }
             val rms = kotlin.math.sqrt((sum / audioChunk.size).toDouble())
+            lastProb = rms.toFloat()
             // Dynamic voice threshold
             return rms > 0.012
         }
@@ -96,13 +98,28 @@ class SileroVAD(context: Context) {
             try {
                 outputs = sessionLocal.run(inputs)
                 val outputTensor = outputs[0] as OnnxTensor
-                @Suppress("UNCHECKED_CAST")
-                val outputFloat = ((outputTensor.value as? Array<FloatArray>)?.get(0)?.get(0)) ?: 0f
+                val rawOutput = outputTensor.value
+                val outputFloat = when (rawOutput) {
+                    is FloatArray -> rawOutput[0]
+                    is Array<*> -> {
+                        val first = rawOutput[0]
+                        if (first is FloatArray) first[0] else 0f
+                    }
+                    else -> 0f
+                }
+
+                lastProb = outputFloat
 
                 val nextState = outputs[1] as OnnxTensor
-                @Suppress("UNCHECKED_CAST")
-                val nextStateVal = nextState.value as? Array<Array<FloatArray>>
-                if (nextStateVal != null) vadState = nextStateVal
+                val rawState = nextState.value
+                if (rawState is Array<*>) {
+                    try {
+                        @Suppress("UNCHECKED_CAST")
+                        vadState = rawState as Array<Array<FloatArray>>
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Failed to cast nextState to 3D float array: ${e.message}")
+                    }
+                }
 
                 // Return speech probability
                 outputFloat > 0.5f

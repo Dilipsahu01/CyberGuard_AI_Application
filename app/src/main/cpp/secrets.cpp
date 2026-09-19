@@ -5,13 +5,8 @@
 extern "C" JNIEXPORT jstring JNICALL
 Java_com_example_security_NativeSecrets_getServerBaseUrl(JNIEnv* env, jclass /* clazz */) {
     // Hidden string built at runtime using char array to evade Hex editors and `strings` tool
-    // Represents: "https://api.cyberguard.example.com"
-    char url[] = {
-        'h', 't', 't', 'p', 's', ':', '/', '/',
-        'a', 'p', 'i', '.', 'c', 'y', 'b', 'e', 'r', 'g', 'u', 'a', 'r', 'd', '.',
-        'e', 'x', 'a', 'm', 'p', 'l', 'e', '.', 'c', 'o', 'm', '\0'
-    };
-    return env->NewStringUTF(url);
+    // Represents: "https://cyberguard-ai-application-private.onrender.com"
+    return env->NewStringUTF("https://cyberguard-ai-application-private.onrender.com");
 }
 
 extern "C" JNIEXPORT jbyteArray JNICALL

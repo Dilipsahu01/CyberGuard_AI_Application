@@ -68,7 +68,7 @@ class StreamingASR(private val context: Context) {
                 type = modelType,
                 numThreads = 2,
             )
-            config.modelConfig.provider = "nnapi"
+            config.modelConfig.provider = "cpu"
 
             // Initialize engine
             recognizer = OnlineRecognizer(assetManager = null, config = config)
@@ -97,17 +97,25 @@ class StreamingASR(private val context: Context) {
             recognizerLocal.decode(streamLocal)
         }
 
-        val accumulatedText = recognizerLocal.getResult(streamLocal).text
+        return recognizerLocal.getResult(streamLocal).text
+    }
+    
+    fun getCurrentText(): String {
+        val recognizerLocal = recognizer ?: return ""
+        val streamLocal = stream ?: return ""
+        return recognizerLocal.getResult(streamLocal).text
+    }
 
-        var delta = ""
-        val currentLen = accumulatedText.length
-        if (currentLen > lastProcessedLength) {
-            delta = accumulatedText.substring(lastProcessedLength, currentLen).trim()
-            lastProcessedLength = currentLen
-            fullTranscript = accumulatedText
-        }
+    fun isEndpoint(): Boolean {
+        val recognizerLocal = recognizer ?: return false
+        val streamLocal = stream ?: return false
+        return recognizerLocal.isEndpoint(streamLocal)
+    }
 
-        return delta
+    fun resetStream() {
+        val recognizerLocal = recognizer ?: return
+        val streamLocal = stream ?: return
+        recognizerLocal.reset(streamLocal)
     }
 
     fun reset() {
@@ -115,6 +123,31 @@ class StreamingASR(private val context: Context) {
         stream = recognizer?.createStream()
         fullTranscript = ""
         lastProcessedLength = 0
+    }
+
+    fun forceEndpoint(): String {
+        try {
+            val r = recognizer
+            val s = stream
+            if (r == null || s == null) return ""
+            val text = r.getResult(s).text
+            if (text.isNotBlank()) {
+                r.reset(s)
+            }
+            return text
+        } catch (e: Exception) {
+            return ""
+        }
+    }
+
+    fun isStreamReady(): Boolean {
+        return try {
+            val r = recognizer
+            val s = stream
+            if (r != null && s != null) r.isReady(s) else false
+        } catch (e: Exception) {
+            false
+        }
     }
 
     fun close() {

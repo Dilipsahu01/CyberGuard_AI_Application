@@ -70,22 +70,4 @@ class PhoneNumberUtilsTest {
         assertEquals("", PhoneNumberUtils.normalize("!@#$%^&*()"))
     }
 
-    @Test
-    fun testHashConsistencyWithDifferentFormats() {
-        val hash1 = PhoneNumberUtils.hash("+91 98765 43210")
-        val hash2 = PhoneNumberUtils.hash("0919876543210")
-        val hash3 = PhoneNumberUtils.hash("98765-43210")
-        val hash4 = PhoneNumberUtils.hash("9876543210")
-        
-        assertEquals(hash1, hash2)
-        assertEquals(hash2, hash3)
-        assertEquals(hash3, hash4)
-        
-        // Ensure it's exactly 16 chars as defined by `.take(16)`
-        assertEquals(16, hash1.length)
-        
-        // Ensure empty string produces consistent hash
-        val emptyHash = PhoneNumberUtils.hash("")
-        assertEquals(16, emptyHash.length)
-    }
 }

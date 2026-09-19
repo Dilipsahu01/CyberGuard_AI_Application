@@ -61,6 +61,8 @@ class PipelineManager(context: Context) {
     var contactMemory: ContactMemory? = null
     var callContext: com.example.models.CallContext? = null
 
+    var lastAmplitude: Float = 0f
+
     private var transcript = StringBuilder()
     private var turnCount = 0
     private var chunkIndex = 0
@@ -89,34 +91,50 @@ class PipelineManager(context: Context) {
         latestResult = processChunk(floatBuf.copyOf(size)) // We can further optimize by passing size to processChunk if we change its signature
     }
 
-    fun processChunk(audio: FloatArray, skipNlp: Boolean = false): RiskResult {
-        Log.d(TAG, "Received float chunk of size ${audio.size}. Starting pipeline processing. (skipNlp=$skipNlp)")
+    fun processChunk(audio: FloatArray, skipNlp: Boolean = false, isSimulation: Boolean = false): RiskResult {
         chunkIndex++
+        
+        var maxAmp = 0f
+        for (sample in audio) {
+            val abs = Math.abs(sample)
+            if (abs > maxAmp) maxAmp = abs
+        }
+        lastAmplitude = maxAmp
 
         // Stage 1: VAD Speech Gating and Utterance State Tracking
-        val isSpeech = vad.isSpeech(audio)
+        val isSpeech = isSimulation || vad.isSpeech(audio)
         val utteranceEnded = vad.utteranceEnded
+        Log.w(TAG, "Chunk #$chunkIndex | size ${audio.size} | isSpeech=$isSpeech")
 
         // Stage 1.5: Deepfake / Robo-Voice Acoustic Detection Stub
         val isRoboVoice = detectRoboVoice(audio)
 
         // Stage 2: ASR — only process audio when VAD confirms human speech is present.
         // This saves ~70% CPU by skipping the 132MB Sherpa-ONNX model during silence.
-        var newText = ""
         if (isSpeech) {
-            newText = asr.processChunk(audio)
-            if (newText.isNotEmpty()) {
-                if (transcript.isNotEmpty()) {
-                    transcript.append(" ")
+            asr.processChunk(audio)
+            
+            val isEndpoint = asr.isEndpoint()
+            
+            if (isEndpoint || utteranceEnded) {
+                val currentText = asr.forceEndpoint()
+                if (currentText.isNotBlank()) {
+                    if (transcript.isNotEmpty()) {
+                        transcript.append(" ")
+                    }
+                    transcript.append(currentText)
+                    turnCount++ // Increment speech turn count
+                    arcTracker.update(currentText)
                 }
-                transcript.append(newText)
-                turnCount++ // Increment speech turn count
-                arcTracker.update(newText)
             }
         }
+        
+        // Compute live transcript for UI updates (finalized + partial)
+        val liveTranscript = if (transcript.isEmpty()) asr.getCurrentText() else transcript.toString() + " " + asr.getCurrentText()
+        val newTextDelta = asr.getCurrentText() // We run regex on the partial text immediately for faster reaction time!
 
         // Stage 3: Regex keyword gate scan (on new text delta only)
-        val (regexScore, matchingKeywords) = regexGate.check(newText)
+        val (regexScore, matchingKeywords) = regexGate.check(newTextDelta)
         if (matchingKeywords.isNotEmpty()) {
             hitWord = matchingKeywords
             val hitLower = hitWord.lowercase()
@@ -128,9 +146,10 @@ class PipelineManager(context: Context) {
 
         // Stage 4: Semantic Context Analysis (ADPF THERMAL API + VAD GATING)
 
-        // Mandate 1: Fast-Talker Exploit Check
+        // Mandate 1: Fast-Talker Exploit Check and Time-based Polling
         val isFastTalker = (turnCount - lastLlmRunTurn) >= 5
-        val shouldWakeLlm = regexScore > 0 || utteranceEnded || isFastTalker
+        val timeBasedWake = (chunkIndex % 60 == 0) // Wake LLM every ~2 seconds (60 chunks * 32ms = 1.92s) for live updates
+        val shouldWakeLlm = regexScore > 0 || utteranceEnded || isFastTalker || timeBasedWake
 
         // Mandate 2: ADPF Thermal API Check (Dynamic Precision Scaling)
         var thermalThrottling = false
@@ -151,8 +170,8 @@ class PipelineManager(context: Context) {
             powerManager.getThermalHeadroom(0) > 0.70f
         } else false
 
-        if (shouldWakeLlm && !thermalThrottling && !skipNLP && newText.isNotEmpty() && transcript.isNotEmpty()) {
-            val slidingWindowText = getLastNWords(transcript.toString(), 100)
+        if (shouldWakeLlm && !thermalThrottling && !skipNLP && liveTranscript.isNotEmpty()) {
+            val slidingWindowText = getLastNWords(liveTranscript, 100)
             
             val localNlp = nlp
             if (localNlp != null) {
@@ -190,12 +209,65 @@ class PipelineManager(context: Context) {
 
         return RiskResult(
             score = finalScore,
-            transcript = transcript.toString(),
+            transcript = liveTranscript.trim(),
             regexScore = regexScore,
             hitWord = hitWord,
             intents = lastIntents,
             stage = if (utteranceEnded) "ENSEMBLE_NLP_UPDATE" else "ENSEMBLE",
             isRoboVoice = isRoboVoice
+        )
+    }
+
+    fun processManualText(newText: String): RiskResult {
+        Log.d(TAG, "Manual text injection: $newText")
+        if (transcript.isNotEmpty()) {
+            transcript.append(" ")
+        }
+        transcript.append(newText)
+        turnCount++
+        arcTracker.update(newText)
+
+        // Run through stages
+        val (regexScore, matchingKeywords) = regexGate.check(newText)
+        var hitWord = ""
+        if (matchingKeywords.isNotEmpty()) {
+            hitWord = matchingKeywords
+            val hitLower = hitWord.lowercase()
+            contactMemory?.let { mem ->
+                if ("otp" in hitLower || "pin" in hitLower || "cvv" in hitLower || "password" in hitLower) mem.askedOtp = true
+                if ("secret" in hitLower || "private" in hitLower || "don't tell anyone" in hitLower) mem.secrecyAsked = true
+            }
+        }
+
+        val slidingWindowText = getLastNWords(transcript.toString(), 100)
+        val localNlp = nlp
+        if (localNlp != null) {
+            lastIntents = localNlp.analyze(slidingWindowText)
+            contactMemory?.let { mem ->
+                if (lastIntents.financial > 40) mem.askedMoney = true
+                if (lastIntents.urgency > 60) mem.urgencyUsed = true
+                
+                val currentIntimacy = (lastIntents.intimacy / 14).coerceIn(0, 7)
+                if (currentIntimacy > mem.intimacyLevel) mem.intimacyLevel = currentIntimacy
+                
+                val currentEmotion = (lastIntents.urgency / 14).coerceIn(0, 7)
+                if (currentEmotion > mem.emotionalIntensity) mem.emotionalIntensity = currentEmotion
+            }
+        }
+
+        val romanceScore = contactMemory?.computeRomanceScore() ?: 0
+        val baseScore = ensemble.calculate(regexScore, lastIntents, arcTracker.arcScore, romanceScore, callContext)
+        val baselineSuspicion = (turnCount * 5).coerceAtMost(25)
+        currentScore = Math.min(baseScore + baselineSuspicion, 100)
+
+        return RiskResult(
+            score = currentScore,
+            transcript = transcript.toString(),
+            regexScore = regexScore,
+            hitWord = hitWord,
+            intents = lastIntents,
+            stage = "MANUAL_INJECTION",
+            isRoboVoice = false
         )
     }
 

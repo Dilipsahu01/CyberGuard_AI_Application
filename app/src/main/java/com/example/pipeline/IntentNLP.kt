@@ -114,22 +114,30 @@ class IntentNLP(context: Context) {
                 val envLocal = env!!
                 val sessionLocal = session!!
 
-                // Simple whitespace tokenizer to demonstrate ONNX feeding
+                // The new fine-tuned model expects exactly 128 tokens for input_ids
                 val tokens = tokenize(transcript)
-                val seqLen = tokens.size.toLong()
+                val seqLen = 128L
 
-                // input_ids [1, seqLen]
+                // input_ids [1, 128]
                 val idsShape = longArrayOf(1, seqLen)
-                // Pre-allocated LongArray to avoid Collection boxing (.map { ... })
-                val rawLongs = LongArray(tokens.size)
-                for (i in tokens.indices) {
+                val rawLongs = LongArray(128) { 0L } // Padding token is usually 0
+                val maskLongs = LongArray(128) { 0L }
+
+                // Determine how many tokens to copy (truncate if > 128)
+                val copyLen = minOf(tokens.size, 128)
+                
+                // For a sliding window, we might prefer the last 128, but for now we'll take the first copyLen or last copyLen.
+                // Let's just take the first copyLen (or if it's already a sliding window from PipelineManager, just copy).
+                for (i in 0 until copyLen) {
                     rawLongs[i] = tokens[i].toLong()
+                    maskLongs[i] = 1L // 1 for real tokens, 0 for padding
                 }
+
                 val idsBuffer = LongBuffer.wrap(rawLongs)
                 val idsTensor = OnnxTensor.createTensor(envLocal, idsBuffer, idsShape)
 
-                // attention_mask [1, seqLen]
-                val maskBuffer = LongBuffer.wrap(LongArray(tokens.size) { 1L })
+                // attention_mask [1, 128]
+                val maskBuffer = LongBuffer.wrap(maskLongs)
                 val maskTensor = OnnxTensor.createTensor(envLocal, maskBuffer, idsShape)
 
                 // The new model ONLY expects input_ids and attention_mask

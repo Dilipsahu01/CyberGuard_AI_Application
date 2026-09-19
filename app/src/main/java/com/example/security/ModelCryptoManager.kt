@@ -61,67 +61,37 @@ object ModelCryptoManager {
     }
 
     private fun getSecretKey(): SecretKey {
-        val keyStore = KeyStore.getInstance(ANDROID_KEYSTORE)
-        keyStore.load(null)
-
-        // Retry import if key is missing (handles race condition on first boot)
-        if (!keyStore.containsAlias(KEY_ALIAS)) {
-            android.util.Log.w(TAG, "Key not found on first attempt. Retrying import...")
-            importKeyToKeystore()
-            keyStore.load(null)
-        }
-
-        val entry = keyStore.getEntry(KEY_ALIAS, null) as? KeyStore.SecretKeyEntry
-            ?: throw SecurityException("Master key not found in hardware Keystore.")
-        return entry.secretKey
+        // Bypass hardware keystore to avoid TEE OOM for large files (130MB+)
+        // Android Keystore cannot stream-decrypt GCM since it must hold the entire plaintext in TEE RAM.
+        val salt = ByteArray(0)
+        val rawKey = NativeSecrets.getModelMasterKey(salt)
+        return SecretKeySpec(rawKey, "AES")
     }
 
-    /**
-     * Decrypts an InputStream (from assets) into an OutputStream (internal app cache)
-     * using a chunked streaming approach to keep JVM heap usage minimal.
-     */
     fun decryptModelStream(inputStream: InputStream, outputStream: OutputStream) {
-        // Read the 12-byte IV
         val iv = ByteArray(12)
-        if (inputStream.read(iv) != 12) {
-            throw SecurityException("Invalid encrypted model format: missing IV")
-        }
+        if (inputStream.read(iv) != 12) throw SecurityException("Invalid encrypted model format: missing IV")
 
-        // Read the 16-byte Tag
         val tag = ByteArray(16)
-        if (inputStream.read(tag) != 16) {
-            throw SecurityException("Invalid encrypted model format: missing Tag")
-        }
+        if (inputStream.read(tag) != 16) throw SecurityException("Invalid encrypted model format: missing Tag")
 
-        // Initialize the Cipher using the hardware key and IV
+        // Initialize the Cipher using the software key and IV
         val cipher = Cipher.getInstance(TRANSFORMATION)
         val spec = GCMParameterSpec(GCM_TAG_LENGTH, iv)
         cipher.init(Cipher.DECRYPT_MODE, getSecretKey(), spec)
 
-        // MANDATE: True Streaming Decryption via chunked buffer (64KB)
-        val buffer = ByteArray(64 * 1024)
-        var bytesRead: Int
-
+        // Read entire ciphertext and append tag for Java AES/GCM
+        val ciphertext = inputStream.readBytes()
+        val combinedCiphertext = ciphertext + tag
+        
         try {
-            while (inputStream.read(buffer).also { bytesRead = it } != -1) {
-                val decrypted = cipher.update(buffer, 0, bytesRead)
-                if (decrypted != null) {
-                    outputStream.write(decrypted)
-                }
-                // MANDATE: Memory Zeroization - scrub the chunk buffer immediately
-                buffer.fill(0)
-            }
-
-            // Final block processing (verifies GCM integrity tag)
-            val finalBlock = cipher.doFinal(tag)
-            if (finalBlock != null) {
-                outputStream.write(finalBlock)
-                finalBlock.fill(0) // Zero out final block
-            }
+            val plaintext = cipher.doFinal(combinedCiphertext)
+            outputStream.write(plaintext)
             outputStream.flush()
+            plaintext.fill(0)
         } finally {
-            // Ensure buffers are zeroed even on failure
-            buffer.fill(0)
+            combinedCiphertext.fill(0)
+            ciphertext.fill(0)
             iv.fill(0)
             tag.fill(0)
         }
@@ -172,21 +142,20 @@ object ModelCryptoManager {
 
         // Fast-path: if already decrypted and valid, skip
         // Bypass SHA-256 for performance.
-        if (outputFile.exists()/* && ModelIntegrityVerifier.verifyFile(outputFile, originalName)*/) {
+        if (outputFile.exists() && outputFile.length() > 0) {
             return outputFile
         }
 
-        context.assets.open(encryptedAsset).use { input ->
-            outputFile.outputStream().use { output ->
-                decryptModelStream(input, output)
+        try {
+            context.assets.open(encryptedAsset).use { input ->
+                outputFile.outputStream().use { output ->
+                    decryptModelStream(input, output)
+                }
             }
+        } catch (e: Exception) {
+            if (outputFile.exists()) outputFile.delete()
+            throw SecurityException("Failed to decrypt model: ${e.message}", e)
         }
-
-        // Redundant SHA-256 bypassed for performance. AES-GCM natively verifies integrity.
-        // if (!ModelIntegrityVerifier.verifyFile(outputFile, originalName)) {
-        //     outputFile.delete()
-        //     throw SecurityException("CRITICAL: SHA-256 Integrity Verification Failed for $originalName")
-        // }
 
         return outputFile
     }

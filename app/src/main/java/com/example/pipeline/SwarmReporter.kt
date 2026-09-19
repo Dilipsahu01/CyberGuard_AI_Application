@@ -37,7 +37,7 @@ import java.util.concurrent.TimeUnit
 class SwarmReporter(private val context: Context) {
     private val SWARM_SERVER_URL: String
         get() = context.getSharedPreferences("cyberguard_settings", Context.MODE_PRIVATE)
-            .getString("swarm_server_url", "https://api.cyberguard-ai.com/telemetry") ?: "https://api.cyberguard-ai.com/telemetry"
+            .getString("swarm_server_url", "https://cyberguard-ai-application-private.onrender.com/api/telemetry") ?: "https://cyberguard-ai-application-private.onrender.com/api/telemetry"
 
     private val db by lazy { ScamDatabase.getDatabase(context) }
 

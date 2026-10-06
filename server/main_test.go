@@ -1,11 +1,21 @@
 package main
 
 import (
+	"bytes"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/base64"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 )
+
+func signPayload(payload []byte) string {
+	mac := hmac.New(sha256.New, telemetryPepper)
+	mac.Write(payload)
+	return base64.URLEncoding.EncodeToString(mac.Sum(nil))
+}
 
 func TestPingHandler(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/ping", nil)
@@ -22,9 +32,10 @@ func TestTelemetryHandler_ValidPayload(t *testing.T) {
 	initDB()
 	defer closeDB()
 
-	body := `{"caller":"abc123","score":42,"transcript":"test","intent_scores":[1,2,3,4,5],"timestamp":1234567890}`
-	req := httptest.NewRequest(http.MethodPost, "/api/telemetry", strings.NewReader(body))
+	body := []byte(`{"caller":"abc123","score":42,"transcript":"test","intent_scores":[1,2,3,4,5],"timestamp":1234567890}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/telemetry", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-App-Signature", signPayload(body))
 	w := httptest.NewRecorder()
 	telemetryHandler(w, req)
 	resp := w.Result()
@@ -34,7 +45,9 @@ func TestTelemetryHandler_ValidPayload(t *testing.T) {
 }
 
 func TestTelemetryHandler_InvalidJSON(t *testing.T) {
-	req := httptest.NewRequest(http.MethodPost, "/api/telemetry", strings.NewReader("not-json"))
+	body := []byte("not-json")
+	req := httptest.NewRequest(http.MethodPost, "/api/telemetry", bytes.NewReader(body))
+	req.Header.Set("X-App-Signature", signPayload(body))
 	w := httptest.NewRecorder()
 	telemetryHandler(w, req)
 	resp := w.Result()

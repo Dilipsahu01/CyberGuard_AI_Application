@@ -109,3 +109,10 @@ yc-application.txt
 ip.md
 security_audit_report.md
 docs/security_audit_report.artifact.md
+
+# ── Local Test Logs & Scratch ───────────────────────────────────────────────────
+myenv/
+*log.txt
+*log2.txt
+*debug.txt
+crash_buffer.txt

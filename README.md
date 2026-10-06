@@ -1,69 +1,77 @@
+# CyberGuard AI - On-Device Telecom Defense against Social Engineering
+
 <div align="center">
-
-# CYBERGUARD AI
-
-**Real-Time Telecom Security Ecosystem**
-
-<br>
-
-[![Status](https://img.shields.io/badge/Status-Top%2050%20National%20Innovator-FFD700?style=for-the-badge&logoColor=black)](#)
-[![Event](https://img.shields.io/badge/Event-5G%20Innovation%20Hackathon%202026-0052cc?style=for-the-badge)](#)
-[![Phase](https://img.shields.io/badge/Phase-Pragati%20Phase-222222?style=for-the-badge)](#)
-
-<br>
-
-*Innovating for a secure, 5G-enabled India.*
-
+  <img src="https://img.shields.io/badge/Status-Prototype%20Validated-success" alt="Status">
+  <img src="https://img.shields.io/badge/Platform-Android%205G-green" alt="Platform">
+  <img src="https://img.shields.io/badge/AI-On--Device-blue" alt="AI">
+  <img src="https://img.shields.io/badge/Latency-%E2%89%A430ms-orange" alt="Latency">
 </div>
 
----
+## 🛡️ The Problem
 
-> [!IMPORTANT]
-> **Source Code Withheld for Intellectual Property (IP) Protection**
-> 
-> The source code for this project is currently maintained in a **Private Repository** to protect Intellectual Property rights. CyberGuard AI has been officially selected in the **Top 50 National Evaluation Results** for the **5G Innovation Hackathon 2026**. 
-> 
-> *If you are a recruiter, hiring manager, or technical judge, I am happy to provide temporary access or walk you through the codebase during an interview. Please reach out directly.*
+In 2024, India lost over ₹1,900 Crore to "digital arrest," voice phishing, and social engineering scams. Current telecom defenses rely heavily on reactive cloud-based lookups and user reports. These legacy systems fail against spoofed VoIP numbers and zero-day attack scripts. Furthermore, when vulnerable citizens—especially the elderly—are placed under psychological pressure by scammers posing as law enforcement, they enter a panic loop and become physically incapable of hanging up the phone.
 
----
+## 🚀 The Solution
 
-## 5G Innovation Hackathon 2026
+**CyberGuard AI** is a proactive, real-time telecom defense system that operates entirely on the edge. Rather than simply blocking known numbers, it analyzes the behavioral psychology and intent of the live conversation. 
 
-The **[5G Innovation Hackathon 2026](https://www.preprodeservices.dot.gov.in/5ghackathon/)** is a prestigious national initiative organized by the Department of Telecommunications (DoT) to develop cutting-edge solutions using 5G labs across 100 institutes in India.
+When a scammer utilizes coercion, false authority, or extreme urgency, the AI instantly detects the threat. To break the victim's panic loop, the system intervenes autonomously by flashing a full-screen RED warning overlay, vibrating the device, and instantly dispatching a "Guardian SMS" to trusted family members with the caller's details.
 
-Our platform directly addresses the following official thematic areas:
-* **Telecom security solutions** relevant to next-generation communication systems.
-* **Application of Artificial Intelligence (AI)** and Machine Learning (ML) for telecom technology.
-* **5G use cases leveraging advanced network capabilities**, including network slicing and Quality of Service (QoS).
+## 🧠 Core Technology & Architecture
 
----
+Engineered to run efficiently on low-cost 5G Android smartphones (tested on ₹12K Oppo A59 5G), CyberGuard AI utilizes a proprietary **Tri-Fold Asynchronous AI Gating Pipeline**:
 
-## Project Overview
+*   **Stage 1 (VAD Gating):** A lightweight Voice Activity Detection model (Silero VAD) gates the CPU, preserving battery and preventing thermal throttling by sleeping during silence.
+*   **Stage 2 (ASR):** Speech is transcribed into Hinglish text in 100ms chunks using a highly optimized Sherpa-ONNX Fast Conformer.
+*   **Stage 3 (Intent NLP):** A custom 22MB INT8-quantized MiniLM model, fine-tuned via Layer-Wise Learning Rate Decay, processes the transcript. It uses a bespoke 5-neuron classification head to score the call across distinct psychological vectors (Financial, Urgency, Coercion, Intimacy, Trust).
 
-**CyberGuard AI** is a next-generation telecom security ecosystem designed to detect, mitigate, and report telecom scams, spam, and malicious intent in real-time using **100% Offline, Privacy-First Edge AI**. 
+By shifting computation entirely to the device, the system achieves an end-to-end pipeline latency of **≤30.1 ms**—well within the telecom budget for real-time intervention.
 
-Engineered with **Dynamic Thermal Edge Routing**, the architecture seamlessly manages ONNX LLM neural networking on active voice calls without overheating.
+### Pipeline Flow
 
-### Core Capabilities
+```mermaid
+graph LR
+    %% Styling Classes
+    classDef input fill:#1f2937,stroke:#3b82f6,stroke-width:2px,color:#fff,rx:10px,ry:10px
+    classDef vad fill:#374151,stroke:#10b981,stroke-width:2px,color:#fff,rx:10px,ry:10px
+    classDef asr fill:#374151,stroke:#8b5cf6,stroke-width:2px,color:#fff,rx:10px,ry:10px
+    classDef nlp fill:#374151,stroke:#ec4899,stroke-width:2px,color:#fff,rx:10px,ry:10px
+    classDef output fill:#7f1d1d,stroke:#ef4444,stroke-width:3px,color:#fff,rx:10px,ry:10px
+    classDef fast fill:#064e3b,stroke:#059669,stroke-width:1px,color:#a7f3d0
 
-| Capability | Description |
-|:---|:---|
-| **100% Offline Privacy** | Zero personally identifiable information (PII) leaves the device. All intent evaluation is securely computed entirely on-device. |
-| **DPDP Act Compliance** | Features on-device PII scrubbing (masking names/OTPs) and a "Right to Erasure" data purge mechanism. |
-| **Encrypted Storage** | Local Room databases are encrypted at rest using **SQLCipher** with hardware-backed passphrases. |
-| **Dynamic Thermal Routing** | Integrates with ADPF to automatically route traffic between heavy ONNX NLP and zero-compute Regex gates to prevent overheating. |
-| **Hinglish Threat Intel** | Specifically tuned to intercept "Digital Arrests," FedEx Customs scams, and TRAI impersonation using regional concept matching. |
-| **Network Hardening** | Implements TLS Certificate Pinning and dynamic key derivation to prevent MITM and binary extraction. |
-| **Zero-Allocation Profiling** | Eliminates Garbage Collection thrashing and thermal spikes during real-time audio capture. |
+    %% Nodes
+    A["🎙️ Audio Stream<br/><span style='font-size:12px;color:#9ca3af'>100ms PCM-16BIT</span>"]:::input
+    
+    B["<b>STAGE 1: VAD Gating</b><br/>Silero VAD (2.3MB)<br/><span style='font-size:12px;color:#10b981'>Latency: 3.2 ms</span>"]:::vad
+    
+    C["<b>STAGE 2: Transcription</b><br/>Sherpa-ONNX Fast Conformer<br/><span style='font-size:12px;color:#a78bfa'>Latency: 14.5 ms</span>"]:::asr
+    
+    D["<b>STAGE 3: Intent NLP</b><br/>Custom MiniLM (22MB INT8)<br/><span style='font-size:12px;color:#f472b6'>Latency: 8.8 ms</span>"]:::nlp
+    
+    E["🚨 Threat Fusion<br/><b>Total Latency: ≤30.1 ms</b>"]:::output
 
----
+    %% Connections
+    A -->|16kHz| B
+    B -->|Speech Detected| C
+    B -.->|Silence - Sleep Mode| Z["💤 Battery Preserved"]:::fast
+    C -->|Hinglish Text| D
+    D -->|5 Intent Logits| E
+```
 
-## Contact & Inquiry
+## 🌐 Swarm Intelligence & 5G Infrastructure
 
-If you would like to discuss the technical implementation, view the system architecture diagrams, or request a code walkthrough, please feel free to reach out to the lead engineer:
+CyberGuard AI is designed as a B2B2G (Business-to-Business-to-Government) infrastructure solution. 
 
-* **Email:** dilipsahuop@gmail.com
-* **LinkedIn:** [Dilip Sahu](https://www.linkedin.com/in/dilip-sahu-7b8789324/)
-* **Hackathon Support:** hackathon.5g@tcil.net.in
+When a threat is detected, it generates an ultra-compact **82-bit binary telemetry packet** (just 10.25 bytes). This packet transmits anonymous threat signals to a Go-based Swarm Server via a 5G URLLC network slice. The server utilizes a 10M-bit Bloom Filter for O(1) instant threat lookups across the national network, essentially immunizing the entire grid against a scammer within seconds of their first call. 
 
-<br>
+Additionally, a persistent **72-bit ContactMemory state machine** tracks multi-session conversational arcs, effectively defending against slow-burn "pig butchering" and romance scams.
+
+## 🔒 Privacy by Design
+
+Because all AI processing happens locally on the smartphone, **zero bytes of raw audio or transcript data ever leave the device.** Only anonymized risk scores are shared with the network. The proprietary local neural network weights are secured by "The Vault"—a multi-layered defense architecture utilizing AES-256-GCM encryption, Android Keystore, and NDK XOR salts.
+
+## 🏆 Project Status
+
+This project was built as a submission for the 5G Innovation Hackathon. It is a prototype-validated blueprint for national-scale telecom security.
+
+*Built by Dilip Sahu - Founder & AI Architect*

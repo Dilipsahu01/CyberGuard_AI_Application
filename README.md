@@ -70,6 +70,24 @@ Additionally, a persistent **72-bit ContactMemory state machine** tracks multi-s
 
 Because all AI processing happens locally on the smartphone, **zero bytes of raw audio or transcript data ever leave the device.** Only anonymized risk scores are shared with the network. The proprietary local neural network weights are secured by "The Vault"—a multi-layered defense architecture utilizing AES-256-GCM encryption, Android Keystore, and NDK XOR salts.
 
+## Documentation
+
+To understand the deeper technical implementation and business strategy of CyberGuard AI, please review the official documentation:
+*   [Pitch Deck & Executive Summary](docs/presentation/CyberGuard_AI_Pitch_Deck.md)
+*   [Project Writeup](docs/presentation/cyberguard_ai_project_writeup.md)
+*   [Security Audit Report](docs/security_audit_report.md)
+*   [Intellectual Property & Patents](docs/ip.md)
+*   [Codebase & Flag Inventory](docs/BOOLEANS_AND_FLAGS_INVENTORY.md)
+
+## Open Source Disclaimer
+
+This repository serves as a structural blueprint and reference implementation for the 5G Innovation Hackathon showcase. **For security and intellectual property reasons, the following components are NOT included in this public repository:**
+1.  **Proprietary ONNX Model Weights:** The highly optimized 22MB INT8-quantized MiniLM weights and the fine-tuned Sherpa-ONNX Fast Conformer binaries are excluded.
+2.  **Training Datasets:** The synthesized Hinglish scam corpora and psychological intent classification datasets are private.
+3.  **The Vault Encryption Keys:** Production AES-256-GCM keys, NDK XOR salts, and the live Swarm Server IP configurations have been scrubbed from this codebase.
+
+*Note: The Android application will not compile or run live inferencing without these proprietary assets.*
+
 ## Achievements & Project Status
 
 *   **Top 50 Proposal:** Selected as one of the Top 50 proposals nationwide in the 5G Innovation Hackathon.

@@ -70,8 +70,11 @@ Additionally, a persistent **72-bit ContactMemory state machine** tracks multi-s
 
 Because all AI processing happens locally on the smartphone, **zero bytes of raw audio or transcript data ever leave the device.** Only anonymized risk scores are shared with the network. The proprietary local neural network weights are secured by "The Vault"—a multi-layered defense architecture utilizing AES-256-GCM encryption, Android Keystore, and NDK XOR salts.
 
-## Project Status
+## Achievements & Project Status
 
-This project was built as a submission for the 5G Innovation Hackathon. It is a prototype-validated blueprint for national-scale telecom security.
+*   **5G Innovation Hackathon:** Officially showcased and recognized at the 5G Innovation Hackathon (India Mobile Congress ASPIRE Pavilion).
+*   **Seed Funding:** Successfully secured seed funding to scale this on-device AI prototype into a national-level telecom infrastructure.
+
+This project is a prototype-validated blueprint for securing telecom networks against social engineering.
 
 *Built by Dilip Sahu - Founder & AI Architect*

@@ -1,4 +1,4 @@
-# 🛡️ CyberGuard-AI — Bit & Flag Architecture Reference
+#  CyberGuard-AI — Bit & Flag Architecture Reference
 
 **The definitive catalog of every bit-packed structure, state flag, and memory mapping across the entire CyberGuard-AI codebase with hardened security updates.**
 

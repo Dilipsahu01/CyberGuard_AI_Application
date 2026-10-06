@@ -14,11 +14,11 @@
 
 | Sub-Category | Grade |
 |---|---|
-| `remember` / `derivedStateOf` usage | ⚠️ Poor |
-| `graphicsLayer` GPU offloading | ⚠️ Mixed |
-| `key` in Lazy layouts | 🚨 Critical |
-| Main-thread blocking | 🚨 Severe ANR Risk |
-| State hoisting / ViewModel coverage | 🚨 High Leakage |
+| `remember` / `derivedStateOf` usage |  Poor |
+| `graphicsLayer` GPU offloading |  Mixed |
+| `key` in Lazy layouts |  Critical |
+| Main-thread blocking |  Severe ANR Risk |
+| State hoisting / ViewModel coverage |  High Leakage |
 | Animation implementations | 🟢 Good |
 <!-- slide -->
 ### 2. Edge AI & Pipeline Engineering
@@ -28,8 +28,8 @@
 |---|---|
 | Thread isolation (Audio/AI/DB) | 🟢 Excellent |
 | Memory management & buffer pooling | 🟢 Good (with caveats) |
-| Lifecycle management (ONNX/AudioRecord) | ⚠️ Double-free risk |
-| State emission to UI | 🚨 Broken link |
+| Lifecycle management (ONNX/AudioRecord) |  Double-free risk |
+| State emission to UI |  Broken link |
 | Error handling & graceful degradation | 🟢 Good |
 | Thermal management (ADPF) | 🟢 Excellent |
 <!-- slide -->
@@ -38,25 +38,25 @@
 
 | Sub-Category | Grade |
 |---|---|
-| Room Database architecture | 🚨 Dual DB fragmentation |
-| Telecom InCallService | ⚠️ Memory leaks & race conditions |
-| Navigation graph | ⚠️ Broken backstacks |
-| SharedPreferences consistency | 🚨 Key/type mismatches |
-| Permissions & Manifest | 🚨 Missing critical permissions |
-| Broadcast security | 🚨 Transcript leaking |
+| Room Database architecture |  Dual DB fragmentation |
+| Telecom InCallService |  Memory leaks & race conditions |
+| Navigation graph |  Broken backstacks |
+| SharedPreferences consistency |  Key/type mismatches |
+| Permissions & Manifest |  Missing critical permissions |
+| Broadcast security |  Transcript leaking |
 <!-- slide -->
 ### 4. UI/UX, Motion & Human Interface Design
 # Rating: 7.5 / 10
 
 | Sub-Category | Grade |
 |---|---|
-| Visual hierarchy & color system | ⚠️ Inconsistent tokens |
+| Visual hierarchy & color system |  Inconsistent tokens |
 | Screen inventory (26 screens) | 🟢 Comprehensive |
 | Animation quality | 🟢 Good foundation |
 | Cognitive load during calls | 🟢 Well-contained |
-| Interactive elements & touch targets | ⚠️ Missing haptics |
-| Dark mode & theming | 🚨 Completely broken |
-| Accessibility (WCAG) | 🚨 Contrast failures |
+| Interactive elements & touch targets |  Missing haptics |
+| Dark mode & theming |  Completely broken |
+| Accessibility (WCAG) |  Contrast failures |
 ````
 
 ---
@@ -73,7 +73,7 @@ The Compose layer has pockets of excellence but is undermined by systemic archit
 - **`SwipeToAnswerSlider`**: Uses lambda `.offset { IntOffset(...) }` (L528) avoiding recomposition, with proper spring physics (`DampingRatioMediumBouncy`, `StiffnessLow`).
 - **Progress indicators**: `LinearProgressIndicator(progress = { ... })` lambda pattern used correctly across `SplashScreen`, `DashboardScreen`, and `PostCallReviewScreen`.
 
-#### 🚨 Critical Failures
+####  Critical Failures
 
 **1. Main-Thread ANR Blockers (Severity: P0)**
 
@@ -127,7 +127,7 @@ This is the strongest area of the codebase. The audio pipeline is genuinely well
 - **Graceful Degradation**: SileroVAD falls back to RMS energy detection. IntentNLP falls back to keyword concept-matching heuristics. StreamingASR safely returns `""` on failure. Emergency numbers (100, 112, 911) bypass AI entirely.
 - **Security**: AES-GCM model encryption with Android Hardware Keystore, RAM-only decryption with immediate byte zeroization, SHA-256 integrity verification, and `EnvironmentGuard` root/tamper detection.
 
-#### 🚨 Critical Failures
+####  Critical Failures
 
 **1. Broken UI Telemetry Pipeline (Severity: P0)**
 
@@ -162,7 +162,7 @@ In [SileroVAD.kt:79-111](file:///home/dilip_sahu/5ghack/cyberguard-ai-app/app/sr
 
 This is the weakest area. Multiple critical disconnects make features non-functional.
 
-#### 🚨 Critical Failures
+####  Critical Failures
 
 **1. Dual Database Fragmentation (Severity: P1)**
 
@@ -217,7 +217,7 @@ The app has an ambitious, comprehensive screen inventory (26 screens!) with stro
 - **SwipeToAnswerSlider**: Spring-physics snapback, bidirectional gestures, dynamic icon/color morphing. Premium feel.
 - **Anti-Jank Protection**: `DialerScreen.kt` uses a fixed 90dp height for T9 suggestions to prevent layout shifts.
 
-#### 🚨 Critical Failures
+####  Critical Failures
 
 **1. Dark Mode is Completely Non-Functional (Severity: P1)**
 

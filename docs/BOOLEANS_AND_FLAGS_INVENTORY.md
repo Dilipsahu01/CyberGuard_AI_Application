@@ -1,4 +1,4 @@
-# 🛡️ CyberGuard AI: Booleans and Flags Inventory
+#  CyberGuard AI: Booleans and Flags Inventory
 
 This document provides a comprehensive inventory of all boolean flags, bit-packed structures, telemetry bitmasks, and binary status toggles discovered across the CyberGuard AI codebase.
 
@@ -12,7 +12,7 @@ This document provides a comprehensive inventory of all boolean flags, bit-packe
 
 ---
 
-## 🏗️ Bit-Packed Structures
+## 🏗 Bit-Packed Structures
 
 ### 1. ContactMemory (Romance Scam History)
 **File:** `app/src/main/java/com/example/models/ContactMemory.kt`
@@ -110,7 +110,7 @@ This document provides a comprehensive inventory of all boolean flags, bit-packe
 
 ---
 
-## 🛠️ Low-Level Binary Hooks (C++)
+## 🛠 Low-Level Binary Hooks (C++)
 
 **File:** `app/src/main/cpp/secrets.cpp`
 

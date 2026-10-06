@@ -7,17 +7,17 @@
   <img src="https://img.shields.io/badge/Latency-%E2%89%A430ms-orange" alt="Latency">
 </div>
 
-## 🛡️ The Problem
+## The Problem
 
 In 2024, India lost over ₹1,900 Crore to "digital arrest," voice phishing, and social engineering scams. Current telecom defenses rely heavily on reactive cloud-based lookups and user reports. These legacy systems fail against spoofed VoIP numbers and zero-day attack scripts. Furthermore, when vulnerable citizens—especially the elderly—are placed under psychological pressure by scammers posing as law enforcement, they enter a panic loop and become physically incapable of hanging up the phone.
 
-## 🚀 The Solution
+## The Solution
 
 **CyberGuard AI** is a proactive, real-time telecom defense system that operates entirely on the edge. Rather than simply blocking known numbers, it analyzes the behavioral psychology and intent of the live conversation. 
 
 When a scammer utilizes coercion, false authority, or extreme urgency, the AI instantly detects the threat. To break the victim's panic loop, the system intervenes autonomously by flashing a full-screen RED warning overlay, vibrating the device, and instantly dispatching a "Guardian SMS" to trusted family members with the caller's details.
 
-## 🧠 Core Technology & Architecture
+## Core Technology & Architecture
 
 Engineered to run efficiently on low-cost 5G Android smartphones (tested on ₹12K Oppo A59 5G), CyberGuard AI utilizes a proprietary **Tri-Fold Asynchronous AI Gating Pipeline**:
 
@@ -40,7 +40,7 @@ graph LR
     classDef fast fill:#064e3b,stroke:#059669,stroke-width:1px,color:#a7f3d0
 
     %% Nodes
-    A["🎙️ Audio Stream<br/><span style='font-size:12px;color:#9ca3af'>100ms PCM-16BIT</span>"]:::input
+    A["Audio Stream<br/><span style='font-size:12px;color:#9ca3af'>100ms PCM-16BIT</span>"]:::input
     
     B["<b>STAGE 1: VAD Gating</b><br/>Silero VAD (2.3MB)<br/><span style='font-size:12px;color:#10b981'>Latency: 3.2 ms</span>"]:::vad
     
@@ -48,17 +48,17 @@ graph LR
     
     D["<b>STAGE 3: Intent NLP</b><br/>Custom MiniLM (22MB INT8)<br/><span style='font-size:12px;color:#f472b6'>Latency: 8.8 ms</span>"]:::nlp
     
-    E["🚨 Threat Fusion<br/><b>Total Latency: ≤30.1 ms</b>"]:::output
+    E["Threat Fusion<br/><b>Total Latency: ≤30.1 ms</b>"]:::output
 
     %% Connections
     A -->|16kHz| B
     B -->|Speech Detected| C
-    B -.->|Silence - Sleep Mode| Z["💤 Battery Preserved"]:::fast
+    B -.->|Silence - Sleep Mode| Z["Battery Preserved"]:::fast
     C -->|Hinglish Text| D
     D -->|5 Intent Logits| E
 ```
 
-## 🌐 Swarm Intelligence & 5G Infrastructure
+## Swarm Intelligence & 5G Infrastructure
 
 CyberGuard AI is designed as a B2B2G (Business-to-Business-to-Government) infrastructure solution. 
 
@@ -66,11 +66,11 @@ When a threat is detected, it generates an ultra-compact **82-bit binary telemet
 
 Additionally, a persistent **72-bit ContactMemory state machine** tracks multi-session conversational arcs, effectively defending against slow-burn "pig butchering" and romance scams.
 
-## 🔒 Privacy by Design
+## Privacy by Design
 
 Because all AI processing happens locally on the smartphone, **zero bytes of raw audio or transcript data ever leave the device.** Only anonymized risk scores are shared with the network. The proprietary local neural network weights are secured by "The Vault"—a multi-layered defense architecture utilizing AES-256-GCM encryption, Android Keystore, and NDK XOR salts.
 
-## 🏆 Project Status
+## Project Status
 
 This project was built as a submission for the 5G Innovation Hackathon. It is a prototype-validated blueprint for national-scale telecom security.
 

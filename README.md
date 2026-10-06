@@ -72,8 +72,9 @@ Because all AI processing happens locally on the smartphone, **zero bytes of raw
 
 ## Achievements & Project Status
 
-*   **5G Innovation Hackathon:** Officially showcased and recognized at the 5G Innovation Hackathon (India Mobile Congress ASPIRE Pavilion).
-*   **Seed Funding:** Successfully secured seed funding to scale this on-device AI prototype into a national-level telecom infrastructure.
+*   **Top 50 Proposal:** Selected as one of the Top 50 proposals nationwide in the 5G Innovation Hackathon.
+*   **Seed Funding:** Granted official prototype development seed funding.
+*   **IMC 2026 Showcase:** Awarded an exclusive startup stall at the prestigious India Mobile Congress (IMC) 2026 ASPIRE Pavilion.
 
 This project is a prototype-validated blueprint for securing telecom networks against social engineering.
 
